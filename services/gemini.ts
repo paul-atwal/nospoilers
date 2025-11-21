@@ -70,7 +70,50 @@ const calculateBasicExcitement = (homeScore: number, awayScore: number): number 
 };
 
 /**
- * Calculates excitement based on Win Probability (WP) History.
+ * Calculates specific "Tune-in Urgency" for LIVE games.
+ * Focuses on: Is it close? Is it late?
+ */
+const calculateLiveExcitement = (currentWP: number, period: number, homeScore: number, awayScore: number): number => {
+    // 1. Determine "Uncertainty" (0 to 10)
+    // WP of 50% -> Uncertainty 10
+    // WP of 100% -> Uncertainty 0
+    let wp = currentWP;
+    if (wp > 2.0) wp /= 100; // Handle 0-100 scale vs 0-1 scale
+    const uncertainty = (1 - (Math.abs(0.5 - wp) * 2)) * 10;
+
+    // 2. Determine Time Factor
+    // Q1: 0.7x (Cool, but early)
+    // Q2: 0.8x
+    // Q3: 0.9x
+    // Q4: 1.2x (Crunch time)
+    // OT: 1.5x (Sudden death)
+    let timeFactor = 0.7;
+    if (period === 2) timeFactor = 0.8;
+    if (period === 3) timeFactor = 0.9;
+    if (period >= 4) timeFactor = 1.2;
+    if (period > 4) timeFactor = 1.5; // OT
+
+    let score = uncertainty * timeFactor;
+
+    // 3. Contextual Bonuses
+    const diff = Math.abs(homeScore - awayScore);
+    
+    // If it's the 4th quarter and a one-score game, boost it.
+    if (period >= 4 && diff <= 8) {
+        score += 2.0;
+    }
+    
+    // If it's a blowout (>17 pts) in 2nd half, punish heavily
+    if (period >= 3 && diff > 17) {
+        score -= 3.0;
+    }
+
+    // Floor/Ceiling
+    return Math.max(1.0, Math.min(10.0, score));
+};
+
+/**
+ * Calculates excitement based on Win Probability (WP) History for FINAL games.
  */
 const calculateAdvancedExcitement = (wpHistory: any[], homeScore: number, awayScore: number, statusState: string, isOT: boolean): number => {
   // If game is upcoming (pre), score is 0
@@ -237,6 +280,7 @@ export const fetchGamesForWeek = async (continuousWeek: number): Promise<Game[]>
       
       const statusState = event.status.type.state; 
       let statusDetail = event.status.type.shortDetail;
+      const period = event.status.period || 0;
       
       // Detect OT before stripping it
       const isOT = statusDetail.includes("OT") || statusDetail.includes("Overtime");
@@ -246,9 +290,14 @@ export const fetchGamesForWeek = async (continuousWeek: number): Promise<Game[]>
         statusDetail = "Final";
       }
 
-      // Fix: For upcoming games, statusDetail is often "11/23 - 1:00 PM EST". 
-      // We want to clean this so we can use our own formatting.
-      if (statusState === 'pre') {
+      const isLive = statusState === 'in';
+      const isFinal = statusState === 'post';
+      
+      // Robust check for upcoming games. 
+      // If it's not live and not final, treat as upcoming to avoid displaying raw date strings as status.
+      const isUpcoming = statusState === 'pre' || statusState === 'scheduled' || (!isLive && !isFinal);
+
+      if (isUpcoming) {
         statusDetail = "Upcoming";
       }
 
@@ -258,19 +307,32 @@ export const fetchGamesForWeek = async (continuousWeek: number): Promise<Game[]>
       const homeRecord = home.records?.[0]?.summary || '';
       const awayRecord = away.records?.[0]?.summary || '';
 
-      const isUpcoming = statusState === 'pre';
-      const isLive = statusState === 'in';
-
       let excitementScore = 0;
 
       if (!isUpcoming) {
         const summaryData = await fetchGameSummary(event.id);
         const wpHistory = summaryData?.winProbability || [];
-        excitementScore = calculateAdvancedExcitement(wpHistory, homeScore, awayScore, statusState, isOT);
+        
+        if (isLive) {
+            // --- LIVE GAME LOGIC ---
+            let currentWP = 0.5;
+            if (wpHistory.length > 0) {
+                currentWP = wpHistory[wpHistory.length - 1].homeWinPercentage;
+            } else {
+                // If no WP data yet, infer from score? Or just use 0.5 for start
+                currentWP = 0.5;
+            }
+            excitementScore = calculateLiveExcitement(currentWP, period, homeScore, awayScore);
+        } else {
+            // --- FINAL GAME LOGIC ---
+            excitementScore = calculateAdvancedExcitement(wpHistory, homeScore, awayScore, statusState, isOT);
+        }
       }
 
       const dateObj = new Date(event.date);
-      const timeZone = 'America/Los_Angeles'; // Changed to PST
+      const timeZone = 'America/Los_Angeles'; // PST
+      
+      // Force timezone to be used in formatting
       const dayOfWeek = dateObj.toLocaleDateString('en-US', { weekday: 'short', timeZone }).toUpperCase();
       const dateLabel = dateObj.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', timeZone });
       const kickoffTime = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short', timeZone });
@@ -291,7 +353,7 @@ export const fetchGamesForWeek = async (continuousWeek: number): Promise<Game[]>
         kickoffTime,
         dayOfWeek,
         dateLabel,
-        weekLabel, // Added for Top 5 View
+        weekLabel,
         excitementScore,
         isUpcoming,
         isLive,
