@@ -161,9 +161,17 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
         <div className="flex flex-col items-center justify-between min-w-[60px] border-l border-white/5 pl-3 md:pl-4 py-1">
             
             {/* Score/Odds Circle */}
-            <div className="flex-1 flex items-start justify-center pt-1">
+            <div className="flex-1 flex items-center justify-center relative">
                 {!game.isUpcoming ? (
-                    <div className={`w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center border-[3px] backdrop-blur-sm shadow-lg ${colorClasses}`}>
+                    <div className={`relative w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center border-[3px] backdrop-blur-sm shadow-lg transition-all duration-300 ${colorClasses} ${game.isLive && game.excitementScore > 7 ? 'animate-pulse' : ''}`}>
+                        
+                        {/* Live Label Overlay */}
+                        {game.isLive && (
+                           <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[8px] font-bold bg-red-600 text-white px-1.5 py-0.5 rounded-full z-10">
+                             LIVE
+                           </span>
+                        )}
+
                         <span className={`font-black text-lg md:text-xl leading-none ${colorClasses.split(' ')[0]}`}>
                             {game.excitementScore.toFixed(1)}
                         </span>
@@ -186,15 +194,13 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
             {!game.isUpcoming && (
                 <button 
                     onClick={() => setIsRevealed(!isRevealed)}
-                    className={`mt-2 p-2 rounded-full transition-all duration-200 focus:outline-none
+                    className={`mt-1 p-2 rounded-full transition-all duration-200 focus:outline-none
                         ${isRevealed ? 'text-neutral-600 hover:bg-neutral-800' : 'text-blue-400 hover:bg-blue-500/10 hover:text-blue-300'}`}
                     aria-label={isRevealed ? "Hide Score" : "Reveal Score"}
                 >
                     {isRevealed ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
             )}
-             {/* Spacer for alignment */}
-            {game.isUpcoming && <div className="h-8 w-8"></div>}
         </div>
 
       </div>
