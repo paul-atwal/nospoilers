@@ -1,21 +1,25 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import GameCard from './components/GameCard';
 import { Game, WeekInfo } from './types';
-import { fetchGamesForWeek, fetchCurrentWeek } from './services/gemini';
+import { fetchSchedule, fetchGameExcitement, fetchCurrentWeek } from './services/gemini';
 import { Loader2, AlertCircle, Info } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentWeek, setCurrentWeek] = useState<WeekInfo | null>(null);
   const [games, setGames] = useState<Game[]>([]);
+  
+  // Separate state for season top games to avoid complexity
   const [seasonTopGames, setSeasonTopGames] = useState<Game[]>([]);
   
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loadingSchedule, setLoadingSchedule] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [showRatingInfo, setShowRatingInfo] = useState(false);
-  
   const [viewMode, setViewMode] = useState<'weekly' | 'season'>('weekly');
+
+  // Queue management ref
+  const processingQueue = useRef<boolean>(false);
 
   // Initial load of current NFL week
   useEffect(() => {
@@ -26,93 +30,137 @@ const App: React.FC = () => {
     init();
   }, []);
 
-  // Fetch games when week changes or view mode switches to weekly
+  // 1. Fetch Basic Schedule (Fast)
   useEffect(() => {
     if (!currentWeek) return;
-    if (viewMode === 'season') return; // Don't refetch weekly data if in season mode
+    if (viewMode === 'season') return; 
 
-    const loadGames = async () => {
-      setLoading(true);
+    const loadSchedule = async () => {
+      setLoadingSchedule(true);
       setError(null);
+      setGames([]); // Clear prev games
       try {
-        const fetchedGames = await fetchGamesForWeek(currentWeek.week);
+        const fetchedGames = await fetchSchedule(currentWeek.week);
         
+        // Initial sort by status
         const sortedGames = fetchedGames.sort((a, b) => {
-          const getStatusPriority = (g: Game) => {
-            if (g.isLive) return 0;
-            if (!g.isUpcoming) return 1; // Finished
-            return 2; // Upcoming
-          };
-
-          const priorityA = getStatusPriority(a);
-          const priorityB = getStatusPriority(b);
-
-          if (priorityA !== priorityB) return priorityA - priorityB;
-
-          if (!a.isUpcoming && !b.isUpcoming) {
-            return b.excitementScore - a.excitementScore;
-          }
-
+          if (a.isLive && !b.isLive) return -1;
+          if (!a.isLive && b.isLive) return 1;
+          if (!a.isUpcoming && b.isUpcoming) return -1;
+          if (a.isUpcoming && !b.isUpcoming) return 1;
           return 0;
         });
 
         setGames(sortedGames);
       } catch (err) {
         console.error(err);
-        setError("Failed to load game data.");
+        setError("Failed to load schedule.");
       } finally {
-        setLoading(false);
+        setLoadingSchedule(false);
       }
     };
 
-    loadGames();
+    loadSchedule();
   }, [currentWeek, viewMode]);
 
-  // Handle "Best of Season" fetch
+  // 2. Progressive Loading Queue for Weekly View
+  // 2. Progressive Loading Queue for Weekly View
+  useEffect(() => {
+      if (viewMode === 'season') return;
+      
+      let isMounted = true;
+
+      const processNextGame = async () => {
+          // Find next game that needs a score (score is null, not upcoming, and NOT live)
+          const gameIndex = games.findIndex(g => g.excitementScore === null && !g.isUpcoming && !g.isLive);
+          
+          if (gameIndex === -1) return; // All done
+
+          const gameToProcess = games[gameIndex];
+
+          try {
+              // Add a small delay to be nice to the API
+              await new Promise(r => setTimeout(r, 100));
+              if (!isMounted) return;
+              
+              const result = await fetchGameExcitement(gameToProcess);
+              if (!isMounted) return;
+              
+              setGames(prevGames => {
+                  const newGames = [...prevGames];
+                  const idx = newGames.findIndex(g => g.id === gameToProcess.id);
+                  if (idx !== -1) {
+                      newGames[idx] = {
+                          ...newGames[idx],
+                          excitementScore: result.score,
+                          isEstimated: result.isEstimated
+                      };
+                  }
+                  return newGames;
+              });
+          } catch (e) {
+              console.error("Queue error", e);
+          }
+      };
+
+      processNextGame();
+
+      return () => {
+          isMounted = false;
+      };
+  }, [games, viewMode]);
+
+
+  // 3. Special Handler for Season Mode (Bulk fetch then sort)
   useEffect(() => {
       if (viewMode === 'season' && currentWeek) {
           const loadSeasonBest = async () => {
-              setLoading(true);
+              setLoadingSchedule(true);
               setError(null);
               try {
                   if (seasonTopGames.length > 0) {
-                      setLoading(false);
+                      setLoadingSchedule(false);
                       return;
                   }
 
+                  // Fetch all weeks of current season
                   const maxWeek = currentWeek.week;
-                  const weeksToFetch = [];
-                  // Fetch all weeks up to current week
-                  for(let i = 1; i <= maxWeek; i++) {
-                      weeksToFetch.push(fetchGamesForWeek(i));
+                  const startWeek = 1;
+                  
+                  const schedulePromises = [];
+                  for(let i = startWeek; i <= maxWeek; i++) {
+                      schedulePromises.push(fetchSchedule(i));
                   }
                   
-                  const results = await Promise.all(weeksToFetch);
-                  const allGames = results.flat();
+                  const weeklySchedules = await Promise.all(schedulePromises);
+                  const allGames = weeklySchedules.flat().filter(g => !g.isUpcoming);
+
+                  // OPTIMIZED: Fetch all scores in parallel (they're cached!)
+                  // This is much faster than sequential fetching
+                  const scorePromises = allGames.map(game => 
+                      fetchGameExcitement(game).then(({ score }) => ({ ...game, excitementScore: score }))
+                  );
                   
-                  const bestGames = allGames
-                    .filter(g => !g.isUpcoming && g.status === 'Final')
-                    .sort((a, b) => b.excitementScore - a.excitementScore)
-                    .slice(0, 10); // Top 10
+                  const processedGames = await Promise.all(scorePromises);
+
+                  const bestGames = processedGames
+                    .sort((a, b) => (b.excitementScore || 0) - (a.excitementScore || 0))
+                    .slice(0, 10);
 
                   setSeasonTopGames(bestGames);
               } catch (e) {
                   console.error(e);
                   setError("Could not load season data.");
               } finally {
-                  setLoading(false);
+                  setLoadingSchedule(false);
               }
           };
           loadSeasonBest();
       }
   }, [viewMode, currentWeek]);
 
-  // Helper to change week (updates state)
   const handleWeekChange = (newContinuousWeek: number) => {
     if (!currentWeek) return;
-    // We don't need to calculate seasonType here, fetchGamesForWeek handles it based on the number
-    // We just need to update the label for the state object
-    // fetchGamesForWeek recalculates labels, so we mainly need the number.
     setCurrentWeek({ 
         ...currentWeek, 
         week: newContinuousWeek, 
@@ -142,7 +190,6 @@ const App: React.FC = () => {
 
       <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6 relative">
         
-        {/* Info Banner / Tooltip Toggle - Aligned with content */}
         <div className="flex justify-between items-end mb-4 px-1">
             <div>
               {viewMode === 'weekly' ? (
@@ -162,17 +209,25 @@ const App: React.FC = () => {
 
         {showRatingInfo && (
           <div className="mb-6 bg-neutral-800/50 border border-white/10 rounded-xl p-4 text-sm text-neutral-300 animate-in fade-in slide-in-from-top-2">
-            <h3 className="font-bold text-white mb-2">The Excitement Formula</h3>
-            <ul className="list-disc list-inside space-y-1 text-xs opacity-80">
-              <li><span className="text-blue-400 font-medium">Close Scores:</span> Games within one possession score highest.</li>
-              <li><span className="text-blue-400 font-medium">Comebacks:</span> Big swings in win probability add bonuses.</li>
-              <li><span className="text-blue-400 font-medium">High Stakes:</span> Overtime games are automatic thrillers.</li>
-            </ul>
+            <h3 className="font-bold text-white mb-2">How Games Are Rated</h3>
+            <p className="text-xs opacity-80 mb-3">
+              Ratings are calculated using play-by-play data from 1,500+ games (2020-2025).
+            </p>
+            <div className="space-y-2 text-xs opacity-80">
+              <div>
+                <span className="text-blue-400 font-medium">Game Volatility (Primary):</span> Measures dramatic swings in win probability throughout the game. High volatility = back-and-forth action, late-game heroics, and sustained tension.
+              </div>
+              <div>
+                <span className="text-purple-400 font-medium">Comeback Factor (Bonus):</span> Rewards teams that overcome significant deficits, adding narrative drama beyond raw volatility.
+              </div>
+            </div>
+            <p className="text-[10px] opacity-60 mt-3 italic">
+              Note: A game can score 10/10 from volatility alone - comeback is just icing on the cake.
+            </p>
           </div>
         )}
 
-        {/* Loading */}
-        {loading && (
+        {loadingSchedule && (
           <div className="flex flex-col items-center justify-center py-24 gap-4 opacity-60">
             <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
             <p className="text-xs tracking-widest uppercase">
@@ -181,16 +236,14 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Error */}
-        {!loading && error && (
+        {!loadingSchedule && error && (
           <div className="bg-red-900/10 border border-red-900/50 rounded-xl p-6 text-center">
             <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
             <p className="text-red-200">{error}</p>
           </div>
         )}
 
-        {/* Game List */}
-        {!loading && !error && (
+        {!loadingSchedule && !error && (
           <div className="flex flex-col gap-3">
             {displayedGames.length === 0 ? (
                <div className="text-center py-20 text-neutral-500 text-sm">
