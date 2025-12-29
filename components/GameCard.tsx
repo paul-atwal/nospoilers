@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Game } from '../types';
 import { getExcitementColor } from '../utils/formatting';
 
@@ -11,7 +11,13 @@ interface GameCardProps {
 
 const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) => {
   const [isRevealed, setIsRevealed] = useState(false);
-  const colorClasses = getExcitementColor(game.excitementScore);
+  
+  const score = game.excitementScore ?? 0;
+  // Loading only if null. If -1 (missing data) or 0 (boring/upcoming), it's not loading.
+  const isLoading = game.excitementScore === null;
+  const isMissingData = score === -1;
+
+  const colorClasses = getExcitementColor(score);
   
   const isHomeWinner = isRevealed && game.homeScore > game.awayScore;
   const isAwayWinner = isRevealed && game.awayScore > game.homeScore;
@@ -163,18 +169,26 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
             {/* Score/Odds Circle */}
             <div className="flex-1 flex items-center justify-center relative">
                 {!game.isUpcoming ? (
-                    <div className={`relative w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center border-[3px] backdrop-blur-sm shadow-lg transition-all duration-300 ${colorClasses} ${game.isLive && game.excitementScore > 7 ? 'animate-pulse' : ''}`}>
+                    <div className={`relative w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center border-[3px] backdrop-blur-sm shadow-lg transition-all duration-300 ${isLoading || isMissingData ? 'border-white/5 bg-white/5' : colorClasses} ${game.isLive && score > 7 ? 'animate-pulse' : ''}`}>
                         
-                        {/* Live Label Overlay */}
-                        {game.isLive && (
-                           <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[8px] font-bold bg-red-600 text-white px-1.5 py-0.5 rounded-full z-10">
-                             LIVE
-                           </span>
+                        {/* Estimation Indicator */}
+                        {game.isEstimated && !isLoading && !game.isLive && (
+                             <span className="absolute -right-1 top-0 text-[10px] font-bold text-neutral-500" title="Estimated Score">~</span>
                         )}
 
-                        <span className={`font-black text-lg md:text-xl leading-none ${colorClasses.split(' ')[0]}`}>
-                            {game.excitementScore.toFixed(1)}
-                        </span>
+                        {isLoading ? (
+                            game.isLive ? (
+                                <span className="text-[10px] font-bold text-red-400 tracking-wider animate-pulse">LIVE</span>
+                            ) : (
+                                <Loader2 className="w-5 h-5 text-neutral-500 animate-spin" />
+                            )
+                        ) : isMissingData ? (
+                            <Loader2 className="w-4 h-4 text-neutral-600 animate-spin" />
+                        ) : (
+                            <span className={`font-black text-lg md:text-xl leading-none ${colorClasses.split(' ')[0]}`}>
+                                {score.toFixed(1)}
+                            </span>
+                        )}
                     </div>
                 ) : (
                     <div className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-neutral-800/50 border-2 border-neutral-700 flex flex-col items-center justify-center text-[10px] text-neutral-400 font-bold leading-tight text-center p-1">

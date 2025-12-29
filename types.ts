@@ -20,7 +20,8 @@ export interface Game {
   dayOfWeek: string; // e.g. "Sun", "Mon"
   dateLabel: string; // e.g. "11/23"
   weekLabel: string; // e.g. "Week 12" or "Wild Card"
-  excitementScore: number; // 0.0 to 10.0
+  excitementScore: number | null; // Null while loading
+  isEstimated?: boolean; // True if calculated using fallback logic
   spoilerData: GameSpoilerData;
   broadcaster?: string;
   isUpcoming?: boolean;
