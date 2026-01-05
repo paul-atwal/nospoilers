@@ -25,12 +25,7 @@ app = FastAPI(title="NFL Excitement API")
 # CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "https://nospoil-web.onrender.com",
-        "https://*.onrender.com",
-    ],
+    allow_origins=["*"],  # Allow all origins for development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
