@@ -211,9 +211,9 @@ const App: React.FC = () => {
           <div className="mb-6 bg-neutral-800/50 border border-white/10 rounded-xl p-4 text-sm text-neutral-300 animate-in fade-in slide-in-from-top-2">
             <h3 className="font-bold text-white mb-2">How Games Are Rated</h3>
             <p className="text-xs opacity-80 mb-3">
-              Ratings are calculated using play-by-play data from 1,500+ games (2020-2025).
+              Ratings are calculated using play-by-play data from 2,600+ games (2016-2025). The average game scores around 5.0.
             </p>
-            <div className="space-y-2 text-xs opacity-80">
+            <div className="space-y-2 text-xs opacity-80 mb-3">
               <div>
                 <span className="text-blue-400 font-medium">Game Volatility (Primary):</span> Measures dramatic swings in win probability throughout the game. High volatility = back-and-forth action, late-game heroics, and sustained tension.
               </div>
@@ -221,9 +221,16 @@ const App: React.FC = () => {
                 <span className="text-purple-400 font-medium">Comeback Factor (Bonus):</span> Rewards teams that overcome significant deficits, adding narrative drama beyond raw volatility.
               </div>
             </div>
-            <p className="text-[10px] opacity-60 mt-3 italic">
-              Note: A game can score 10/10 from volatility alone - comeback is just icing on the cake.
-            </p>
+            <div className="border-t border-white/10 pt-3">
+              <p className="text-xs font-medium text-white mb-2">Score Guide</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                <div><span className="text-purple-400">9.0+</span> <span className="opacity-70">— Must Watch (Top 5%)</span></div>
+                <div><span className="text-green-400">7.5+</span> <span className="opacity-70">— Thriller (Top 15%)</span></div>
+                <div><span className="text-blue-400">6.0+</span> <span className="opacity-70">— Good Game</span></div>
+                <div><span className="text-yellow-400">4.0+</span> <span className="opacity-70">— Decent</span></div>
+                <div><span className="text-red-400">&lt;4.0</span> <span className="opacity-70">— Skip It</span></div>
+              </div>
+            </div>
           </div>
         )}
 
