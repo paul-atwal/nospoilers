@@ -1,7 +1,7 @@
 """
 Fetches NFL play-by-play data from nflfastR and processes win probability history.
 """
-import nflreadpy as nfl
+import nfl_data_py as nfl
 import pandas as pd
 import json
 from pathlib import Path
