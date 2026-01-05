@@ -8,11 +8,12 @@ import { Loader2, AlertCircle, Info } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentWeek, setCurrentWeek] = useState<WeekInfo | null>(null);
+  const [actualCurrentWeek, setActualCurrentWeek] = useState<number | null>(null); // The real current NFL week (doesn't change when navigating)
   const [games, setGames] = useState<Game[]>([]);
-  
+
   // Separate state for season top games to avoid complexity
   const [seasonTopGames, setSeasonTopGames] = useState<Game[]>([]);
-  
+
   const [loadingSchedule, setLoadingSchedule] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [showRatingInfo, setShowRatingInfo] = useState(false);
@@ -26,6 +27,7 @@ const App: React.FC = () => {
     const init = async () => {
       const weekInfo = await fetchCurrentWeek();
       setCurrentWeek(weekInfo);
+      setActualCurrentWeek(weekInfo.week); // Store the actual current week
     };
     init();
   }, []);
@@ -113,7 +115,7 @@ const App: React.FC = () => {
 
   // 3. Special Handler for Season Mode (Bulk fetch then sort)
   useEffect(() => {
-      if (viewMode === 'season' && currentWeek) {
+      if (viewMode === 'season' && actualCurrentWeek) {
           const loadSeasonBest = async () => {
               setLoadingSchedule(true);
               setError(null);
@@ -123,8 +125,8 @@ const App: React.FC = () => {
                       return;
                   }
 
-                  // Fetch all weeks of current season
-                  const maxWeek = currentWeek.week;
+                  // Fetch all weeks of current season (use actual current week, not viewed week)
+                  const maxWeek = actualCurrentWeek;
                   const startWeek = 1;
                   
                   const schedulePromises = [];
@@ -157,7 +159,7 @@ const App: React.FC = () => {
           };
           loadSeasonBest();
       }
-  }, [viewMode, currentWeek]);
+  }, [viewMode, actualCurrentWeek]);
 
   const handleWeekChange = (newContinuousWeek: number) => {
     if (!currentWeek) return;
