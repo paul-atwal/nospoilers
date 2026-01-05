@@ -4,3 +4,4 @@ nfl_data_py
 pandas
 pyarrow
 requests
+redis
