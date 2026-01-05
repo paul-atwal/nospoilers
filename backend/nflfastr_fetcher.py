@@ -4,6 +4,8 @@ Fetches NFL play-by-play data from nflfastR and processes win probability histor
 import nfl_data_py as nfl
 import pandas as pd
 import json
+import os
+import redis
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -13,15 +15,41 @@ class NFLFastRFetcher:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
         self.cache_file = self.cache_dir / "wp_cache.json"
-        print(f"DEBUG: Loading cache from {self.cache_file.absolute()}")
+
+        # Try to connect to Redis, fall back to file-based cache
+        redis_url = os.environ.get("REDIS_URL")
+        self.redis_client = None
+        if redis_url:
+            try:
+                self.redis_client = redis.from_url(redis_url)
+                self.redis_client.ping()
+                print("DEBUG: Connected to Redis cache")
+            except Exception as e:
+                print(f"DEBUG: Redis connection failed ({e}), using file cache")
+                self.redis_client = None
+
+        # In-memory cache (loaded from Redis or file)
         self.cache = self._load_cache()
-        if "401772779" in self.cache:
-            print(f"DEBUG: Cache has 401772779: {self.cache['401772779'].get('excitement_score')}")
-        else:
-            print("DEBUG: Cache MISSING 401772779")
+        print(f"DEBUG: Loaded {len(self.cache)} games from cache")
     
     def _load_cache(self) -> Dict:
-        """Load existing cache from JSON file."""
+        """Load existing cache from Redis or JSON file."""
+        # Try Redis first
+        if self.redis_client:
+            try:
+                keys = self.redis_client.keys("game:*")
+                cache = {}
+                for key in keys:
+                    game_id = key.decode().replace("game:", "")
+                    data = self.redis_client.get(key)
+                    if data:
+                        cache[game_id] = json.loads(data)
+                if cache:
+                    return cache
+            except Exception as e:
+                print(f"Error loading from Redis: {e}")
+
+        # Fall back to file
         if self.cache_file.exists():
             try:
                 with open(self.cache_file, 'r') as f:
@@ -30,9 +58,18 @@ class NFLFastRFetcher:
                 print(f"Error loading cache: {e}")
                 return {}
         return {}
-    
+
     def _save_cache(self):
-        """Save cache to JSON file."""
+        """Save cache to Redis and JSON file."""
+        # Save to Redis if available
+        if self.redis_client:
+            try:
+                for game_id, data in self.cache.items():
+                    self.redis_client.set(f"game:{game_id}", json.dumps(data))
+            except Exception as e:
+                print(f"Error saving to Redis: {e}")
+
+        # Always save to file as backup
         try:
             with open(self.cache_file, 'w') as f:
                 json.dump(self.cache, f, indent=2)
