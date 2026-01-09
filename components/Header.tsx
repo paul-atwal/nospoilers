@@ -11,7 +11,14 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ currentWeek, onWeekChange, viewMode, onViewModeChange }) => {
-  
+
+  // Calculate current NFL season (season starts in September)
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-indexed (0 = Jan, 8 = Sept)
+  const seasonStartYear = currentMonth >= 8 ? currentYear : currentYear - 1; // Sept or later = current year's season
+  const seasonLabel = `${seasonStartYear}-${String(seasonStartYear + 1).slice(-2)}`;
+
   const handlePrev = () => {
     if (currentWeek.week > 1) {
       onWeekChange(currentWeek.week - 1);
@@ -106,7 +113,7 @@ const Header: React.FC<HeaderProps> = ({ currentWeek, onWeekChange, viewMode, on
         {/* Season Mode Header */}
         {viewMode === 'season' && (
             <div className="mt-3 flex items-center justify-center bg-yellow-900/20 rounded-lg border border-yellow-500/20 p-2">
-                <span className="text-xs font-bold text-yellow-500 uppercase tracking-widest">Top Games of 2024-25</span>
+                <span className="text-xs font-bold text-yellow-500 uppercase tracking-widest">Top Games of {seasonLabel}</span>
             </div>
         )}
 
