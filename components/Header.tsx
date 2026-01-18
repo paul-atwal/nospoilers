@@ -26,8 +26,8 @@ const Header: React.FC<HeaderProps> = ({ currentWeek, onWeekChange, viewMode, on
   };
 
   const handleNext = () => {
-    // Cap at week 22 (Super Bowl)
-    if (currentWeek.week < 22) {
+    // Cap at week 23 (Super Bowl)
+    if (currentWeek.week < 23) {
       onWeekChange(currentWeek.week + 1);
     }
   };
@@ -38,7 +38,8 @@ const Header: React.FC<HeaderProps> = ({ currentWeek, onWeekChange, viewMode, on
       if (w === 19) return { title: "Postseason", subtitle: "Wild Card" };
       if (w === 20) return { title: "Postseason", subtitle: "Divisional Round" };
       if (w === 21) return { title: "Postseason", subtitle: "Championship" };
-      if (w === 22) return { title: "Postseason", subtitle: "Super Bowl" };
+      if (w === 22) return { title: "Postseason", subtitle: "Pro Bowl" };
+      if (w === 23) return { title: "Postseason", subtitle: "Super Bowl" };
       return { title: "Postseason", subtitle: "Week " + w };
   };
 
@@ -100,9 +101,9 @@ const Header: React.FC<HeaderProps> = ({ currentWeek, onWeekChange, viewMode, on
                   </span>
                 </div>
 
-                <button 
+                <button
                   onClick={handleNext}
-                  disabled={currentWeek.week >= 22}
+                  disabled={currentWeek.week >= 23}
                   className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   <ChevronRight className="w-4 h-4" />
