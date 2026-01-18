@@ -46,10 +46,17 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
 
   const isFinal = game.status === 'Final';
 
+  // Check if this is a playoff game (weekLabel will be "Wild Card", "Divisional Round", etc.)
+  const isPlayoffGame = game.weekLabel && !game.weekLabel.startsWith('Week');
+
   const getDisplayRecord = (currentRecord: string, isHome: boolean) => {
       if (!isFinal) return currentRecord; // Upcoming/Live uses current API record
       if (isRevealed) return currentRecord; // Revealed shows post-game record
-      
+
+      // During playoffs, records are final regular season records - don't adjust
+      // (ESPN returns the 17-game regular season record, not post-playoff record)
+      if (isPlayoffGame) return currentRecord;
+
       // Logic for Hidden Final Game: Show Pre-Game Record
       const homeWon = game.homeScore > game.awayScore;
       const awayWon = game.awayScore > game.homeScore;
