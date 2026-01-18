@@ -184,15 +184,17 @@ const revertRecord = (record: string, result: 'win' | 'loss' | 'tie'): string =>
  * Adjusts team records for future weeks to prevent spoilers.
  * When viewing a future week while current week is ongoing,
  * reverts records to pre-current-week values.
+ * Only active during regular season (weeks 1-18).
  */
 const adjustRecordsForFutureWeek = async (
   games: Game[],
   viewingWeek: number,
   currentWeek: number
 ): Promise<Game[]> => {
-  // Only adjust if viewing a future week during regular season
-  // During playoffs, records are final regular season records and shouldn't be adjusted
-  if (viewingWeek <= currentWeek || viewingWeek > 18) {
+  // Only adjust during regular season (weeks 1-18)
+  // During playoffs (week > 18), records are final and shouldn't be adjusted
+  // Also skip if viewing current or past week
+  if (currentWeek > 18 || viewingWeek > 18 || viewingWeek <= currentWeek) {
     return games;
   }
 
