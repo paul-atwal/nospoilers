@@ -4,6 +4,31 @@ import { Game, WeekInfo } from "../types";
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
 const BACKEND_API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
+/**
+ * Extract regular season record from ESPN records array.
+ * During playoffs, ESPN may include playoff games which makes records inconsistent.
+ * We look for the record that sums to 17 games (regular season), or fall back to first record.
+ */
+const getRegularSeasonRecord = (records: any[] | undefined): string => {
+  if (!records || records.length === 0) return '';
+
+  // Try to find a record that sums to 17 (full regular season)
+  for (const record of records) {
+    if (record.summary) {
+      const parts = record.summary.split('-').map((s: string) => parseInt(s, 10));
+      if (parts.length >= 2 && !parts.some(isNaN)) {
+        const totalGames = parts.reduce((a: number, b: number) => a + b, 0);
+        if (totalGames === 17) {
+          return record.summary;
+        }
+      }
+    }
+  }
+
+  // Fall back to first record
+  return records[0]?.summary || '';
+};
+
 // Odds caching
 const ODDS_CACHE_KEY = "nfl_odds_cache";
 const getOddsCacheKey = () => {
@@ -295,9 +320,10 @@ export const fetchSchedule = async (continuousWeek: number): Promise<Game[]> => 
             awayTeamLogo: away.team.logo,
             homeScore,
             awayScore,
-            // Hide records during playoffs (seasonType 3) since ESPN data is unreliable
-            homeRecord: seasonType === 3 ? '' : (home.records?.[0]?.summary || ''),
-            awayRecord: seasonType === 3 ? '' : (away.records?.[0]?.summary || ''),
+            // For playoffs, show only regular season record (17 games total)
+            // ESPN provides inconsistent playoff records, so we extract just the reg season portion
+            homeRecord: getRegularSeasonRecord(home.records),
+            awayRecord: getRegularSeasonRecord(away.records),
             status: statusDetail,
             kickoffTime,
             dayOfWeek,
