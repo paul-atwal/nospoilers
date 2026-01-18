@@ -295,11 +295,9 @@ export const fetchSchedule = async (continuousWeek: number): Promise<Game[]> => 
             awayTeamLogo: away.team.logo,
             homeScore,
             awayScore,
-            // Find the 'total' or 'overall' record, fall back to first record
-            homeRecord: home.records?.find((r: any) => r.type === 'total' || r.name === 'overall')?.summary
-                || home.records?.[0]?.summary || '',
-            awayRecord: away.records?.find((r: any) => r.type === 'total' || r.name === 'overall')?.summary
-                || away.records?.[0]?.summary || '',
+            // Hide records during playoffs (seasonType 3) since ESPN data is unreliable
+            homeRecord: seasonType === 3 ? '' : (home.records?.[0]?.summary || ''),
+            awayRecord: seasonType === 3 ? '' : (away.records?.[0]?.summary || ''),
             status: statusDetail,
             kickoffTime,
             dayOfWeek,
