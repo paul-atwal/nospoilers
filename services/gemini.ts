@@ -295,8 +295,11 @@ export const fetchSchedule = async (continuousWeek: number): Promise<Game[]> => 
             awayTeamLogo: away.team.logo,
             homeScore,
             awayScore,
-            homeRecord: home.records?.[0]?.summary || '',
-            awayRecord: away.records?.[0]?.summary || '',
+            // Find the 'total' or 'overall' record, fall back to first record
+            homeRecord: home.records?.find((r: any) => r.type === 'total' || r.name === 'overall')?.summary
+                || home.records?.[0]?.summary || '',
+            awayRecord: away.records?.find((r: any) => r.type === 'total' || r.name === 'overall')?.summary
+                || away.records?.[0]?.summary || '',
             status: statusDetail,
             kickoffTime,
             dayOfWeek,
