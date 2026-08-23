@@ -1,54 +1,45 @@
-# NFL Excitement Backend
+# NoSpoil NFL backend
 
-FastAPI backend that fetches nflfastR play-by-play data and calculates excitement scores for NFL games.
+This FastAPI service calculates spoiler-free excitement scores for completed NFL games.
 
-## Features
+## Data flow
 
-- **Automatic Data Fetching**: Background task monitors ESPN API for game completions
-- **Smart Scheduling**: Only checks for finished games during likely ending windows
-  - Groups games by kickoff time slots (games within 30 min = same slot)
-  - Calculates ending windows (3-4 hours after each slot's kickoff)
-  - Avoids unnecessary API calls when no games are ending
-  - Example: Sunday 10 AM games → check 1:00-2:00 PM, then stop until next slot
-- **ESPN API Friendly**: Minimal API calls to avoid rate limiting
-  - Only polls during ending windows (every 5 minutes)
-  - Waits 15 minutes between checks when no games are ending
-  - Refreshes schedule every 6 hours
-- **Smart Caching**: Only fetches nflfastR data once per completed game
-- **Excitement Algorithm**: Based on lead changes, late drama, comebacks, and close scores
-- **REST API**: Simple endpoints for frontend integration
+1. The background task checks the ESPN scoreboard near expected game end times.
+2. The service tries to load play-by-play win probability from nflverse.
+3. If recent nflverse data is not available, the service uses ESPN win probability.
+4. The excitement calculator uses win-probability volatility and a comeback bonus.
+5. The result is saved in Redis or a local JSON file.
 
-## Setup
+## Local setup
 
-1. Create virtual environment and install dependencies:
-   ```bash
-   cd backend
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
+```bash
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
 
-2. Run the server:
-   ```bash
-   python main.py
-   ```
-   
-   Or use the helper script:
-   ```bash
-   ./run.sh
-   ```
+The service runs at `http://localhost:8000`.
 
-The server will start on `http://localhost:8000`
+You can also use the helper script:
 
-## API Endpoints
+```bash
+./run.sh
+```
 
-### GET /
-Health check endpoint
+## API
 
-### GET /api/excitement/{game_id}
-Get excitement score for a specific game (ESPN game ID)
+### `GET /`
 
-**Response:**
+Returns service health and the number of cached games.
+
+### `GET /api/excitement/{game_id}`
+
+Returns the excitement score for one ESPN game ID.
+
+Example response:
+
 ```json
 {
   "game_id": "401671755",
@@ -57,67 +48,38 @@ Get excitement score for a specific game (ESPN game ID)
 }
 ```
 
-### GET /api/excitement/week/{week}
-Get excitement scores for all games in a week
+### `GET /api/excitement/week/{week}`
 
-**Query Parameters:**
-- `season` (optional): Season year (default: 2024)
-- `season_type` (optional): 'REG' or 'POST' (default: 'REG')
+Returns excitement scores for a week.
 
-**Response:**
-```json
-{
-  "week": 12,
-  "season": 2024,
-  "season_type": "REG",
-  "games": [
-    {
-      "game_id": "401671755",
-      "excitement_score": 8.5,
-      "home_score": 28,
-      "away_score": 27,
-      "is_overtime": false
-    }
-  ]
-}
-```
+Query parameters:
 
-### POST /api/refresh-game/{game_id}
-Manually trigger a data refresh for a specific game
+- `season`: NFL season year. The current default in the code is 2024.
+- `season_type`: `REG` or `POST`.
 
-## How It Works
+### `POST /api/refresh-game/{game_id}`
 
-1. **Smart Scheduling**: On startup and every 6 hours:
-   - Fetches this week's schedule from ESPN
-   - Groups games by kickoff time slots (within 30 minutes)
-   - Calculates likely ending windows (3-4 hours after each slot)
+Forces a new lookup for one game. This endpoint is intended for maintenance and testing.
 
-2. **Intelligent Monitoring**: 
-   - Only checks ESPN API during ending windows (every 5 minutes)
-   - When not in a window, waits 15 minutes before rechecking schedule
-   - Example timeline for Sunday games:
-     - 10:00 AM: Games kick off (Slot 1)
-     - 1:00 PM: Start checking Slot 1 games every 5 min
-     - 1:00 PM: New games kick off (Slot 2) 
-     - 2:00 PM: Stop checking (Slot 1 complete)
-     - 4:00 PM: Start checking Slot 2 games
-     - 5:00 PM: Stop checking (Slot 2 complete)
+## Score storage
 
-3. **Auto-Fetch**: When a game finishes:
-   - Automatically fetches nflfastR play-by-play data
-   - Analyzes win probability history
+The backend uses three storage layers:
 
-4. **Excitement Calculation**: 
-   - Lead changes (crossing 50% WP)
-   - Late game drama (4th quarter volatility)
-   - Comeback factor (largest deficit overcome)
-   - Final score margin
-   - Overtime bonus
+1. Process memory for fast reads.
+2. Redis when `REDIS_URL` is set.
+3. `data/wp_cache.json` as a local fallback.
 
-5. **Caching**: Stores results in `data/wp_cache.json` to avoid re-fetching
+The local file does not survive a restart or deployment on hosts with a temporary filesystem. Use Redis with persistence when saved scores must survive those events.
 
-## Data Storage
+The cache currently includes raw win-probability and score history. This makes the file larger than the live API needs, but it allows scores to be recalculated later.
 
-- Cache file: `data/wp_cache.json`
-- Contains win probability history for all fetched games
-- Persists across server restarts
+## Background checks
+
+The scheduler groups games by kickoff time. It checks ESPN every five minutes during expected game-ending windows and refreshes the schedule at intervals outside those windows.
+
+## Data sources
+
+- ESPN scoreboard and game summary endpoints
+- nflverse play-by-play data
+
+These upstream formats can change. Test schedule, identifier mapping, and win-probability parsing before each new season.

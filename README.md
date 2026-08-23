@@ -1,20 +1,82 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# NoSpoil NFL
 
-# Run and deploy your AI Studio app
+NoSpoil NFL helps you choose which NFL games to watch without showing the final score.
 
-This contains everything you need to run your app locally.
+Weekly games stay in schedule order. The **Best of Season** view sorts completed games by excitement score.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1LJrsx2M_ZGWel9PaPY-1PPCDTCETm2aj
+## How it works
 
-## Run Locally
+- The React frontend gets schedules, team details, game status, and odds from ESPN.
+- The FastAPI backend calculates excitement scores from play-by-play win probability.
+- Redis stores scores when `REDIS_URL` is set.
+- A local JSON file is used when Redis is not available.
 
-**Prerequisites:**  Node.js
+## Local setup
 
+### Frontend
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Requirements:
+
+- Node.js
+- npm
+
+Install packages and start the frontend:
+
+```bash
+npm install
+npm run dev
+```
+
+The frontend runs at `http://localhost:3000`.
+
+Set `VITE_API_URL` if the backend is not available at `http://localhost:8000/api`:
+
+```text
+VITE_API_URL=https://your-api.example.com/api
+```
+
+### Backend
+
+Requirements:
+
+- Python 3.11
+
+Install packages and start the backend:
+
+```bash
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+The backend runs at `http://localhost:8000`.
+
+## Environment variables
+
+| Name | Service | Purpose |
+| --- | --- | --- |
+| `VITE_API_URL` | Frontend | Full backend API URL, including `/api` |
+| `REDIS_URL` | Backend | Optional Redis connection for shared score storage |
+| `PORT` | Backend | Server port set by the hosting platform |
+
+If `REDIS_URL` is not set, the backend writes to `backend/data/wp_cache.json`. This local file is useful for development. It is not reliable storage on a hosting service with a temporary filesystem.
+
+## Deployment
+
+[render.yaml](./render.yaml) defines a Render static site and FastAPI web service.
+
+Before deployment:
+
+1. Set the frontend `VITE_API_URL` during the frontend build.
+2. Set `REDIS_URL` if scores must survive backend restarts and deployments.
+3. Use persistent Redis storage if losing the cache is not acceptable.
+
+## Main source files
+
+- `App.tsx`: page state and weekly or season views
+- `components/GameCard.tsx`: spoiler-safe game display
+- `backend/main.py`: FastAPI endpoints and background game checks
+- `backend/nflfastr_fetcher.py`: play-by-play loading and cache access
+- `backend/excitement_calculator.py`: excitement score calculation
