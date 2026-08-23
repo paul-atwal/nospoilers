@@ -47,6 +47,11 @@ backend/analysis_*.txt
 *.temp
 .cache/
 
+# Local project planning
+/ISSUES.md
+/docs/PROJECT_GUIDE.md
+/docs/diagrams/
+
 # Coverage reports
 .coverage
 htmlcov/
