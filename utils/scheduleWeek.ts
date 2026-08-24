@@ -1,5 +1,7 @@
+import type { SupportedSeasonType, WeekInfo } from '../types';
+
 export interface EspnWeek {
-  seasonType: number;
+  seasonType: SupportedSeasonType;
   week: number;
 }
 
@@ -8,11 +10,26 @@ export const toEspnWeek = (scheduleWeek: number): EspnWeek => {
   return { seasonType: 3, week: scheduleWeek - 18 };
 };
 
-export const toScheduleWeek = (week: number, seasonType: number): number => (
+export const toScheduleWeek = (week: number, seasonType: SupportedSeasonType): number => (
   seasonType === 3 ? week + 18 : week
 );
 
-export const getWeekLabel = (week: number, seasonType: number): string => {
+export const toSupportedWeekInfo = (
+  week: number,
+  seasonType: number,
+): WeekInfo => {
+  if (seasonType !== 2 && seasonType !== 3) {
+    return { scheduleWeek: 1, seasonType: 2, label: 'Week 1' };
+  }
+
+  return {
+    scheduleWeek: toScheduleWeek(week, seasonType),
+    seasonType,
+    label: getWeekLabel(week, seasonType),
+  };
+};
+
+export const getWeekLabel = (week: number, seasonType: SupportedSeasonType): string => {
   if (seasonType !== 3) return `Week ${week}`;
 
   const postseasonLabels: Record<number, string> = {

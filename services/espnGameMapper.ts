@@ -1,4 +1,4 @@
-import type { Game } from '../types';
+import type { Game, SupportedSeasonType } from '../types';
 import {
   type GameResult,
   selectRegularSeasonRecord,
@@ -7,7 +7,7 @@ import type { EspnCompetitor, EspnEvent } from './espnTypes';
 
 export interface EspnGameMappingContext {
   oddsByGameId: Readonly<Record<string, string>>;
-  seasonType: number;
+  seasonType: SupportedSeasonType;
   weekLabel: string;
 }
 

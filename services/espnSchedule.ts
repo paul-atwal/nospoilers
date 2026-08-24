@@ -3,7 +3,7 @@ import { revertRecord } from '../utils/records';
 import {
   getWeekLabel,
   toEspnWeek,
-  toScheduleWeek,
+  toSupportedWeekInfo,
   type EspnWeek,
 } from '../utils/scheduleWeek';
 import {
@@ -84,12 +84,7 @@ export const fetchCurrentWeek = async (): Promise<WeekInfo> => {
     const scoreboard = await fetchScoreboard();
     const week = scoreboard.week?.number ?? 1;
     const seasonType = scoreboard.season?.type ?? 2;
-
-    return {
-      scheduleWeek: toScheduleWeek(week, seasonType),
-      seasonType,
-      label: getWeekLabel(week, seasonType),
-    };
+    return toSupportedWeekInfo(week, seasonType);
   } catch (error) {
     console.error('Failed to fetch current week', error);
     return { scheduleWeek: 1, seasonType: 2, label: 'Week 1' };

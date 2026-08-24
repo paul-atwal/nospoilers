@@ -3,6 +3,7 @@ import {
   getWeekLabel,
   toEspnWeek,
   toScheduleWeek,
+  toSupportedWeekInfo,
 } from '../../utils/scheduleWeek';
 
 describe('schedule week conversion', () => {
@@ -19,5 +20,21 @@ describe('schedule week conversion', () => {
   it('returns the existing postseason labels', () => {
     expect(getWeekLabel(1, 3)).toBe('Wild Card');
     expect(getWeekLabel(5, 3)).toBe('Super Bowl');
+  });
+
+  it('defaults preseason to supported regular-season Week 1', () => {
+    expect(toSupportedWeekInfo(3, 1)).toEqual({
+      scheduleWeek: 1,
+      seasonType: 2,
+      label: 'Week 1',
+    });
+  });
+
+  it('uses the same fallback for an unknown season type', () => {
+    expect(toSupportedWeekInfo(7, 99)).toEqual({
+      scheduleWeek: 1,
+      seasonType: 2,
+      label: 'Week 1',
+    });
   });
 });
