@@ -28,6 +28,15 @@ You can also use the helper script:
 ./run.sh
 ```
 
+## Tests
+
+Install the development dependencies and run the backend tests from the repository root:
+
+```bash
+pip install -r backend/requirements-dev.txt
+python -m pytest backend/tests
+```
+
 ## API
 
 ### `GET /`
