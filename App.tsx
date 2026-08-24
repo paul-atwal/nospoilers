@@ -3,7 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import GameCard from './components/GameCard';
 import { Game, WeekInfo } from './types';
-import { fetchSchedule, fetchGameExcitement, fetchCurrentWeek } from './services/gemini';
+import { fetchGameExcitement } from './services/excitementApi';
+import { fetchCurrentWeek, fetchSchedule } from './services/espnSchedule';
 import { Loader2, AlertCircle, Info } from 'lucide-react';
 
 const App: React.FC = () => {
