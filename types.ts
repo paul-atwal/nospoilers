@@ -5,6 +5,8 @@ export interface GameSpoilerData {
   summary: string;
 }
 
+export type SupportedSeasonType = 2 | 3;
+
 export interface Game {
   id: string;
   homeTeam: string;
@@ -20,6 +22,7 @@ export interface Game {
   dayOfWeek: string; // e.g. "Sun", "Mon"
   dateLabel: string; // e.g. "11/23"
   weekLabel: string; // e.g. "Week 12" or "Wild Card"
+  seasonType: SupportedSeasonType;
   excitementScore: number | null; // Null while loading
   isEstimated?: boolean; // True if calculated using fallback logic
   spoilerData: GameSpoilerData;
@@ -30,7 +33,7 @@ export interface Game {
 }
 
 export interface WeekInfo {
-  seasonType: number; // 2 for Reg, 3 for Post
-  week: number; // Continuous week number (1-18 Reg, 19+ Post)
+  seasonType: SupportedSeasonType;
+  scheduleWeek: number; // 1-18 regular season, 19-23 postseason
   label: string;
 }
