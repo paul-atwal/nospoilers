@@ -5,7 +5,7 @@ import { WeekInfo } from '../types';
 
 interface HeaderProps {
   currentWeek: WeekInfo;
-  onWeekChange: (newContinuousWeek: number) => void;
+  onWeekChange: (scheduleWeek: number) => void;
   viewMode: 'weekly' | 'season';
   onViewModeChange: (mode: 'weekly' | 'season') => void;
 }
@@ -20,19 +20,18 @@ const Header: React.FC<HeaderProps> = ({ currentWeek, onWeekChange, viewMode, on
   const seasonLabel = `${seasonStartYear}-${String(seasonStartYear + 1).slice(-2)}`;
 
   const handlePrev = () => {
-    if (currentWeek.week > 1) {
-      onWeekChange(currentWeek.week - 1);
+    if (currentWeek.scheduleWeek > 1) {
+      onWeekChange(currentWeek.scheduleWeek - 1);
     }
   };
 
   const handleNext = () => {
     // Cap at week 23 (Super Bowl)
-    if (currentWeek.week < 23) {
-      onWeekChange(currentWeek.week + 1);
+    if (currentWeek.scheduleWeek < 23) {
+      onWeekChange(currentWeek.scheduleWeek + 1);
     }
   };
 
-  // Helper for displaying the Week Label based on Continuous Week Number
   const getWeekDisplay = (w: number) => {
       if (w <= 18) return { title: "Regular Season", subtitle: `Week ${w}` };
       if (w === 19) return { title: "Postseason", subtitle: "Wild Card" };
@@ -43,7 +42,7 @@ const Header: React.FC<HeaderProps> = ({ currentWeek, onWeekChange, viewMode, on
       return { title: "Postseason", subtitle: "Week " + w };
   };
 
-  const { title, subtitle } = getWeekDisplay(currentWeek.week);
+  const { title, subtitle } = getWeekDisplay(currentWeek.scheduleWeek);
 
   return (
     <header className="sticky top-0 z-50 bg-neutral-900/90 backdrop-blur-md border-b border-white/10 shadow-lg">
@@ -86,7 +85,7 @@ const Header: React.FC<HeaderProps> = ({ currentWeek, onWeekChange, viewMode, on
              <div className="mt-3 flex items-center justify-between bg-neutral-800/50 rounded-lg border border-white/5 p-1">
                 <button 
                   onClick={handlePrev}
-                  disabled={currentWeek.week <= 1}
+                  disabled={currentWeek.scheduleWeek <= 1}
                   className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   <ChevronLeft className="w-4 h-4" />
@@ -103,7 +102,7 @@ const Header: React.FC<HeaderProps> = ({ currentWeek, onWeekChange, viewMode, on
 
                 <button
                   onClick={handleNext}
-                  disabled={currentWeek.week >= 23}
+                  disabled={currentWeek.scheduleWeek >= 23}
                   className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   <ChevronRight className="w-4 h-4" />

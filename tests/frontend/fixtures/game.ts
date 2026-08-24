@@ -13,6 +13,7 @@ const baseGame: Game = {
   dayOfWeek: 'SUN',
   dateLabel: '11/23',
   weekLabel: 'Week 12',
+  seasonType: 2,
   excitementScore: 6.5,
   spoilerData: {
     homeScore: 24,

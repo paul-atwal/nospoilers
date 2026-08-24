@@ -42,3 +42,49 @@ describe('GameCard scores', () => {
     expect(screen.getByText('20')).not.toBeNull();
   });
 });
+
+describe('GameCard records', () => {
+  it('shows pregame records while hidden and postgame records after reveal', () => {
+    render(<GameCard game={makeGame({ homeRecord: '9-2', awayRecord: '7-4' })} />);
+
+    expect(screen.getByText('8-2')).not.toBeNull();
+    expect(screen.getByText('7-3')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal Score' }));
+
+    expect(screen.getByText('9-2')).not.toBeNull();
+    expect(screen.getByText('7-4')).not.toBeNull();
+  });
+
+  it('shows pregame records for a hidden regular-season tie', () => {
+    render(
+      <GameCard
+        game={makeGame({
+          homeScore: 20,
+          awayScore: 20,
+          homeRecord: '8-2-1',
+          awayRecord: '7-3-1',
+        })}
+      />,
+    );
+
+    expect(screen.getByText('8-2')).not.toBeNull();
+    expect(screen.getByText('7-3')).not.toBeNull();
+  });
+
+  it('keeps regular-season records unchanged for a postseason game', () => {
+    render(
+      <GameCard
+        game={makeGame({
+          homeRecord: '12-5',
+          awayRecord: '11-6',
+          seasonType: 3,
+          weekLabel: 'Wild Card',
+        })}
+      />,
+    );
+
+    expect(screen.getByText('12-5')).not.toBeNull();
+    expect(screen.getByText('11-6')).not.toBeNull();
+  });
+});

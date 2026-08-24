@@ -1,33 +1,9 @@
 
 import { Game, WeekInfo } from "../types";
+import { revertRecord, selectRegularSeasonRecord } from "../utils/records";
 
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
 const BACKEND_API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
-
-/**
- * Extract regular season record from ESPN records array.
- * During playoffs, ESPN may include playoff games which makes records inconsistent.
- * We look for the record that sums to 17 games (regular season), or fall back to first record.
- */
-const getRegularSeasonRecord = (records: any[] | undefined): string => {
-  if (!records || records.length === 0) return '';
-
-  // Try to find a record that sums to 17 (full regular season)
-  for (const record of records) {
-    if (record.summary) {
-      const parts = record.summary.split('-').map((s: string) => parseInt(s, 10));
-      if (parts.length >= 2 && !parts.some(isNaN)) {
-        const totalGames = parts.reduce((a: number, b: number) => a + b, 0);
-        if (totalGames === 17) {
-          return record.summary;
-        }
-      }
-    }
-  }
-
-  // Fall back to first record
-  return records[0]?.summary || '';
-};
 
 // Odds caching
 const ODDS_CACHE_KEY = "nfl_odds_cache";
@@ -70,7 +46,7 @@ const setCachedOdds = (odds: Record<string, string>) => {
  * Fetch odds for upcoming games in the current week.
  * Caches results for the day.
  */
-const fetchOddsForUpcomingGames = async (currentWeek: number): Promise<Record<string, string>> => {
+const fetchOddsForUpcomingGames = async (currentScheduleWeek: number): Promise<Record<string, string>> => {
   // Check cache first
   const cached = getCachedOdds();
   if (cached) {
@@ -81,7 +57,7 @@ const fetchOddsForUpcomingGames = async (currentWeek: number): Promise<Record<st
   console.log("Fetching fresh odds for upcoming games");
   
   try {
-    const { seasonType, week } = getApiParams(currentWeek);
+    const { seasonType, week } = getApiParams(currentScheduleWeek);
     const response = await fetch(`${ESPN_API_BASE}?week=${week}&seasontype=${seasonType}&limit=100`);
     
     if (!response.ok) return {};
@@ -111,15 +87,11 @@ const fetchOddsForUpcomingGames = async (currentWeek: number): Promise<Record<st
   }
 };
 
-/**
- * Helper to map continuous week numbers (19+) to API SeasonType/Week params
- */
-const getApiParams = (continuousWeek: number) => {
-  if (continuousWeek <= 18) {
-    return { seasonType: 2, week: continuousWeek };
+const getApiParams = (scheduleWeek: number) => {
+  if (scheduleWeek <= 18) {
+    return { seasonType: 2, week: scheduleWeek };
   }
-  // Week 19 -> Post Week 1, etc.
-  return { seasonType: 3, week: continuousWeek - 18 };
+  return { seasonType: 3, week: scheduleWeek - 18 };
 };
 
 /**
@@ -145,39 +117,20 @@ export const fetchCurrentWeek = async (): Promise<WeekInfo> => {
     const apiWeek = data.week?.number || 1;
     const apiSeasonType = data.season?.type || 2;
     
-    let continuousWeek = apiWeek;
+    let scheduleWeek = apiWeek;
     if (apiSeasonType === 3) {
-        continuousWeek = apiWeek + 18;
+        scheduleWeek = apiWeek + 18;
     }
 
     return {
-      week: continuousWeek,
+      scheduleWeek,
       seasonType: apiSeasonType,
       label: getWeekLabel(apiWeek, apiSeasonType)
     };
   } catch (e) {
     console.error("Failed to fetch current week", e);
-    return { week: 1, seasonType: 2, label: "Week 1" };
+    return { scheduleWeek: 1, seasonType: 2, label: "Week 1" };
   }
-};
-
-/**
- * Helper to revert a record based on game result
- */
-const revertRecord = (record: string, result: 'win' | 'loss' | 'tie'): string => {
-  if (!record) return '';
-  
-  const parts = record.split('-').map(s => parseInt(s, 10));
-  if (parts.some(isNaN)) return record;
-
-  let [w, l, t] = parts;
-
-  if (result === 'win') w = Math.max(0, w - 1);
-  if (result === 'loss') l = Math.max(0, l - 1);
-  if (result === 'tie') t = Math.max(0, (t || 0) - 1);
-
-  if (t && t > 0) return `${w}-${l}-${t}`;
-  return `${w}-${l}`;
 };
 
 /**
@@ -189,23 +142,23 @@ const revertRecord = (record: string, result: 'win' | 'loss' | 'tie'): string =>
  */
 const adjustRecordsForFutureWeek = async (
   games: Game[],
-  viewingWeek: number,
-  currentWeek: number
+  viewingScheduleWeek: number,
+  currentScheduleWeek: number
 ): Promise<Game[]> => {
   // PLAYOFFS: Skip all record adjustment when we're in playoffs
   // currentWeek > 18 means we're in postseason, records are final
-  if (currentWeek > 18) {
+  if (currentScheduleWeek > 18) {
     return games;
   }
 
   // REGULAR SEASON: Skip if viewing playoff weeks or current/past weeks
-  if (viewingWeek > 18 || viewingWeek <= currentWeek) {
+  if (viewingScheduleWeek > 18 || viewingScheduleWeek <= currentScheduleWeek) {
     return games;
   }
 
   try {
     // Fetch current week's games to see results
-    const { seasonType: currentSeasonType, week: currentApiWeek } = getApiParams(currentWeek);
+    const { seasonType: currentSeasonType, week: currentApiWeek } = getApiParams(currentScheduleWeek);
     const currentWeekResponse = await fetch(
       `${ESPN_API_BASE}?week=${currentApiWeek}&seasontype=${currentSeasonType}&limit=100`
     );
@@ -275,9 +228,9 @@ const adjustRecordsForFutureWeek = async (
 /**
  * Fetches schedule from ESPN (scores and status only, no win probability)
  */
-export const fetchSchedule = async (continuousWeek: number): Promise<Game[]> => {
+export const fetchSchedule = async (scheduleWeek: number): Promise<Game[]> => {
   try {
-    const { seasonType, week } = getApiParams(continuousWeek);
+    const { seasonType, week } = getApiParams(scheduleWeek);
     
     const response = await fetch(`${ESPN_API_BASE}?week=${week}&seasontype=${seasonType}&limit=100`);
     if (!response.ok) throw new Error("Failed to fetch ESPN data");
@@ -288,7 +241,7 @@ export const fetchSchedule = async (continuousWeek: number): Promise<Game[]> => 
 
     // Fetch odds for only upcoming games (cached daily)
     const currentWeekInfo = await fetchCurrentWeek();
-    const oddsMap = await fetchOddsForUpcomingGames(currentWeekInfo.week);
+    const oddsMap = await fetchOddsForUpcomingGames(currentWeekInfo.scheduleWeek);
 
     const games = events.map((event: any) => {
         const competition = event.competitions[0];
@@ -328,15 +281,14 @@ export const fetchSchedule = async (continuousWeek: number): Promise<Game[]> => 
             awayTeamLogo: away.team.logo,
             homeScore,
             awayScore,
-            // For playoffs, show only regular season record (17 games total)
-            // ESPN provides inconsistent playoff records, so we extract just the reg season portion
-            homeRecord: getRegularSeasonRecord(home.records),
-            awayRecord: getRegularSeasonRecord(away.records),
+            homeRecord: selectRegularSeasonRecord(home.records),
+            awayRecord: selectRegularSeasonRecord(away.records),
             status: statusDetail,
             kickoffTime,
             dayOfWeek,
             dateLabel,
             weekLabel,
+            seasonType,
             // Excitement score will be fetched from backend
             // null = not yet calculated, 0 = upcoming (no score)
             excitementScore: isUpcoming ? 0 : null, 
@@ -354,7 +306,7 @@ export const fetchSchedule = async (continuousWeek: number): Promise<Game[]> => 
     });
 
     // Adjust records for future weeks to prevent spoilers
-    return await adjustRecordsForFutureWeek(games, continuousWeek, currentWeekInfo.week);
+    return await adjustRecordsForFutureWeek(games, scheduleWeek, currentWeekInfo.scheduleWeek);
 
   } catch (error) {
     console.error("Error fetching NFL schedule:", error);
@@ -393,7 +345,7 @@ export const fetchGameExcitement = async (game: Game): Promise<{ score: number |
 };
 
 // Backwards compatibility wrapper
-export const fetchGamesForWeek = async (continuousWeek: number): Promise<Game[]> => {
-    const games = await fetchSchedule(continuousWeek);
+export const fetchGamesForWeek = async (scheduleWeek: number): Promise<Game[]> => {
+    const games = await fetchSchedule(scheduleWeek);
     return games;
 };

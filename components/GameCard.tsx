@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Game } from '../types';
 import { getExcitementColor } from '../utils/formatting';
+import { getDisplayRecord } from '../utils/records';
 
 interface GameCardProps {
   game: Game;
@@ -27,53 +28,16 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
   const teamAbbr = oddsParts ? oddsParts[0] : '--';
   const spreadVal = oddsParts ? oddsParts.slice(1).join('') : '';
 
-  // Helper to revert a record string based on game result
-  const getPreGameRecord = (record: string, result: 'win' | 'loss' | 'tie') => {
-     if (!record) return '';
-     
-     const parts = record.split('-').map(s => parseInt(s, 10));
-     if (parts.some(isNaN)) return record;
-
-     let [w, l, t] = parts;
-
-     if (result === 'win') w = Math.max(0, w - 1);
-     if (result === 'loss') l = Math.max(0, l - 1);
-     if (result === 'tie') t = Math.max(0, (t || 0) - 1);
-
-     if (t > 0) return `${w}-${l}-${t}`;
-     return `${w}-${l}`;
-  };
-
   const isFinal = game.status === 'Final';
-
-  // Check if this is a playoff game (weekLabel will be "Wild Card", "Divisional Round", etc.)
-  const isPlayoffGame = game.weekLabel && !game.weekLabel.startsWith('Week');
-
-  const getDisplayRecord = (currentRecord: string, isHome: boolean) => {
-      if (!isFinal) return currentRecord; // Upcoming/Live uses current API record
-      if (isRevealed) return currentRecord; // Revealed shows post-game record
-
-      // During playoffs, records are final regular season records - don't adjust
-      // (ESPN returns the 17-game regular season record, not post-playoff record)
-      if (isPlayoffGame) return currentRecord;
-
-      // Logic for Hidden Final Game: Show Pre-Game Record
-      const homeWon = game.homeScore > game.awayScore;
-      const awayWon = game.awayScore > game.homeScore;
-      const tied = game.homeScore === game.awayScore;
-
-      let result: 'win' | 'loss' | 'tie' = 'tie';
-      if (isHome) {
-          if (homeWon) result = 'win';
-          else if (awayWon) result = 'loss';
-      } else {
-          if (awayWon) result = 'win';
-          else if (homeWon) result = 'loss';
-      }
-      if (tied) result = 'tie';
-
-      return getPreGameRecord(currentRecord, result);
-  };
+  const displayRecord = (record: string, side: 'home' | 'away') => getDisplayRecord({
+    record,
+    side,
+    isFinal,
+    isRevealed,
+    isPostseason: game.seasonType === 3,
+    homeScore: game.homeScore,
+    awayScore: game.awayScore,
+  });
 
   return (
     <div className="bg-neutral-800/40 rounded-xl border border-white/5 overflow-hidden hover:border-white/10 transition-colors shadow-sm">
@@ -133,7 +97,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
                                 {game.awayTeam}
                             </span>
                             <span className="text-[10px] text-neutral-500 font-medium">
-                                {getDisplayRecord(game.awayRecord, false)}
+                                {displayRecord(game.awayRecord, 'away')}
                             </span>
                         </div>
                     </div>
@@ -157,7 +121,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
                                 {game.homeTeam}
                             </span>
                              <span className="text-[10px] text-neutral-500 font-medium">
-                                {getDisplayRecord(game.homeRecord, true)}
+                                {displayRecord(game.homeRecord, 'home')}
                             </span>
                         </div>
                     </div>

@@ -8,7 +8,7 @@ import { Loader2, AlertCircle, Info } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentWeek, setCurrentWeek] = useState<WeekInfo | null>(null);
-  const [actualCurrentWeek, setActualCurrentWeek] = useState<number | null>(null); // The real current NFL week (doesn't change when navigating)
+  const [actualCurrentScheduleWeek, setActualCurrentScheduleWeek] = useState<number | null>(null);
   const [games, setGames] = useState<Game[]>([]);
 
   // Separate state for season top games to avoid complexity
@@ -27,7 +27,7 @@ const App: React.FC = () => {
     const init = async () => {
       const weekInfo = await fetchCurrentWeek();
       setCurrentWeek(weekInfo);
-      setActualCurrentWeek(weekInfo.week); // Store the actual current week
+      setActualCurrentScheduleWeek(weekInfo.scheduleWeek);
     };
     init();
   }, []);
@@ -42,7 +42,7 @@ const App: React.FC = () => {
       setError(null);
       setGames([]); // Clear prev games
       try {
-        const fetchedGames = await fetchSchedule(currentWeek.week);
+        const fetchedGames = await fetchSchedule(currentWeek.scheduleWeek);
         
         // Initial sort by status
         const sortedGames = fetchedGames.sort((a, b) => {
@@ -115,7 +115,7 @@ const App: React.FC = () => {
 
   // 3. Special Handler for Season Mode (Bulk fetch then sort)
   useEffect(() => {
-      if (viewMode === 'season' && actualCurrentWeek) {
+      if (viewMode === 'season' && actualCurrentScheduleWeek) {
           const loadSeasonBest = async () => {
               setLoadingSchedule(true);
               setError(null);
@@ -126,7 +126,7 @@ const App: React.FC = () => {
                   }
 
                   // Fetch all weeks of current season (use actual current week, not viewed week)
-                  const maxWeek = actualCurrentWeek;
+                  const maxWeek = actualCurrentScheduleWeek;
                   const startWeek = 1;
                   
                   const schedulePromises = [];
@@ -159,14 +159,14 @@ const App: React.FC = () => {
           };
           loadSeasonBest();
       }
-  }, [viewMode, actualCurrentWeek]);
+  }, [viewMode, actualCurrentScheduleWeek]);
 
-  const handleWeekChange = (newContinuousWeek: number) => {
+  const handleWeekChange = (scheduleWeek: number) => {
     if (!currentWeek) return;
     setCurrentWeek({ 
         ...currentWeek, 
-        week: newContinuousWeek, 
-        seasonType: newContinuousWeek > 18 ? 3 : 2 
+        scheduleWeek,
+        seasonType: scheduleWeek > 18 ? 3 : 2
     });
   };
 

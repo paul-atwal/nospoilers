@@ -20,6 +20,7 @@ export interface Game {
   dayOfWeek: string; // e.g. "Sun", "Mon"
   dateLabel: string; // e.g. "11/23"
   weekLabel: string; // e.g. "Week 12" or "Wild Card"
+  seasonType: number; // ESPN: 2 for regular season, 3 for postseason
   excitementScore: number | null; // Null while loading
   isEstimated?: boolean; // True if calculated using fallback logic
   spoilerData: GameSpoilerData;
@@ -31,6 +32,6 @@ export interface Game {
 
 export interface WeekInfo {
   seasonType: number; // 2 for Reg, 3 for Post
-  week: number; // Continuous week number (1-18 Reg, 19+ Post)
+  scheduleWeek: number; // 1-18 regular season, 19-23 postseason
   label: string;
 }
