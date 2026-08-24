@@ -1,0 +1,57 @@
+{
+  "header": {
+    "competitions": [
+      {
+        "id": "401772840",
+        "status": {
+          "type": {
+            "name": "STATUS_FINAL",
+            "state": "post",
+            "completed": true,
+            "description": "Final",
+            "detail": "Final",
+            "shortDetail": "Final",
+            "altDetail": null
+          }
+        },
+        "competitors": [
+          {
+            "homeAway": "home",
+            "score": "29"
+          },
+          {
+            "homeAway": "away",
+            "score": "27"
+          }
+        ]
+      }
+    ]
+  },
+  "winprobability": [
+    {
+      "homeWinPercentage": 0.708,
+      "tiePercentage": 0.0,
+      "playId": "4017728401"
+    },
+    {
+      "homeWinPercentage": 0.6884,
+      "tiePercentage": 0.0,
+      "playId": "40177284041"
+    },
+    {
+      "homeWinPercentage": 0.6791,
+      "tiePercentage": 0.0,
+      "playId": "40177284064"
+    },
+    {
+      "homeWinPercentage": 1.0,
+      "tiePercentage": 0.0,
+      "playId": "4017728404875"
+    },
+    {
+      "homeWinPercentage": 1.0,
+      "tiePercentage": 0.0,
+      "playId": "4017728404902"
+    }
+  ]
+}
