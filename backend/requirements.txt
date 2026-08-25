@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-nfl_data_py
+nflreadpy
 pandas
 pyarrow
 requests
