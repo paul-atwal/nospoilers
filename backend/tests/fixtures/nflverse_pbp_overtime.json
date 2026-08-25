@@ -1,0 +1,62 @@
+[
+  {
+    "game_id": "2025_12_NYG_DET",
+    "play_id": 1,
+    "week": 12,
+    "season_type": "REG",
+    "home_wp": 0.566792041063309,
+    "total_home_score": 0,
+    "total_away_score": 0,
+    "qtr": 1
+  },
+  {
+    "game_id": "2025_12_NYG_DET",
+    "play_id": 171,
+    "week": 12,
+    "season_type": "REG",
+    "home_wp": 0.514530062675476,
+    "total_home_score": 0,
+    "total_away_score": 6,
+    "qtr": 1
+  },
+  {
+    "game_id": "2025_12_NYG_DET",
+    "play_id": 3299,
+    "week": 12,
+    "season_type": "REG",
+    "home_wp": 0.153272468819463,
+    "total_home_score": 17,
+    "total_away_score": 27,
+    "qtr": 4
+  },
+  {
+    "game_id": "2025_12_NYG_DET",
+    "play_id": 4417,
+    "week": 12,
+    "season_type": "REG",
+    "home_wp": 0.221149250864983,
+    "total_home_score": 27,
+    "total_away_score": 27,
+    "qtr": 4
+  },
+  {
+    "game_id": "2025_12_NYG_DET",
+    "play_id": 4615,
+    "week": 12,
+    "season_type": "REG",
+    "home_wp": 0.829032859864836,
+    "total_home_score": 34,
+    "total_away_score": 27,
+    "qtr": 5
+  },
+  {
+    "game_id": "2025_12_NYG_DET",
+    "play_id": 4978,
+    "week": 12,
+    "season_type": "REG",
+    "home_wp": 1.0,
+    "total_home_score": 34,
+    "total_away_score": 27,
+    "qtr": 5
+  }
+]
