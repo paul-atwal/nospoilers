@@ -1,0 +1,62 @@
+[
+  {
+    "game_id": "2025_03_NYJ_TB",
+    "play_id": 1,
+    "week": 3,
+    "season_type": "REG",
+    "home_wp": 0.566792041063309,
+    "total_home_score": 0,
+    "total_away_score": 0,
+    "qtr": 1
+  },
+  {
+    "game_id": "2025_03_NYJ_TB",
+    "play_id": 419,
+    "week": 3,
+    "season_type": "REG",
+    "home_wp": 0.522391974925995,
+    "total_home_score": 0,
+    "total_away_score": 3,
+    "qtr": 1
+  },
+  {
+    "game_id": "2025_03_NYJ_TB",
+    "play_id": 2500,
+    "week": 3,
+    "season_type": "REG",
+    "home_wp": 0.913995802385731,
+    "total_home_score": 20,
+    "total_away_score": 6,
+    "qtr": 2
+  },
+  {
+    "game_id": "2025_03_NYJ_TB",
+    "play_id": 4665,
+    "week": 3,
+    "season_type": "REG",
+    "home_wp": 0.539870885515849,
+    "total_home_score": 26,
+    "total_away_score": 27,
+    "qtr": 4
+  },
+  {
+    "game_id": "2025_03_NYJ_TB",
+    "play_id": 4875,
+    "week": 3,
+    "season_type": "REG",
+    "home_wp": 0.671166896820068,
+    "total_home_score": 29,
+    "total_away_score": 27,
+    "qtr": 4
+  },
+  {
+    "game_id": "2025_03_NYJ_TB",
+    "play_id": 4902,
+    "week": 3,
+    "season_type": "REG",
+    "home_wp": 1.0,
+    "total_home_score": 29,
+    "total_away_score": 27,
+    "qtr": 4
+  }
+]
