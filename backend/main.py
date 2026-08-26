@@ -15,8 +15,8 @@ from typing import Dict, Optional
 import json
 
 from nflfastr_fetcher import NFLFastRFetcher
-from excitement_calculator import calculate_excitement_score
 from espn_fetcher import fetch_espn_game_data
+from nospoil_nfl.rating import RatingInput, calculate_rating
 
 from game_scheduler import GameScheduler
 
@@ -37,7 +37,7 @@ scheduler = GameScheduler()
 game_status_cache = {}  # Track which games we've seen as Final
 
 
-ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+ESPN_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 
 
 async def check_game_statuses():
@@ -58,7 +58,7 @@ async def check_game_statuses():
                 continue
             
             # We're in a check window - fetch current scoreboard
-            response = requests.get(ESPN_API_BASE, timeout=10)
+            response = requests.get(ESPN_SCOREBOARD_URL, timeout=10)
             if response.status_code != 200:
                 # Error fetching - wait and try again
                 await asyncio.sleep(sleep_seconds)
@@ -89,17 +89,21 @@ async def check_game_statuses():
                     try:
                         wp_data = fetcher.fetch_game_wp(game_id)
                         if wp_data:
-                            # Calculate excitement
-                            excitement = calculate_excitement_score(
-                                wp_data['wp_history'],
-                                wp_data['home_score'],
-                                wp_data['away_score'],
-                                wp_data['is_overtime']
+                            # Calculate the rating.
+                            rating_input = RatingInput(
+                                wp_history=tuple(wp_data['wp_history']),
+                                home_team_won=(
+                                    wp_data['home_score'] > wp_data['away_score']
+                                ),
                             )
-                            print(f"Game {game_id} excitement score: {excitement:.1f}")
+                            excitement_score = calculate_rating(rating_input)
+                            print(
+                                f"Game {game_id} excitement score: "
+                                f"{excitement_score:.1f}"
+                            )
                             # Mark as processed
                             game_status_cache[game_id] = {
-                                'excitement': excitement,
+                                'excitement_score': excitement_score,
                                 'processed_at': datetime.now().isoformat()
                             }
                             # Remove from scheduler tracking
@@ -146,13 +150,6 @@ def get_game_excitement(game_id: str):
     # Check if we have it cached
     cached = fetcher.get_cached_game(game_id)
     
-    if game_id == "401772779":
-        print(f"DEBUG MAIN: Request for 401772779")
-        if cached:
-            print(f"DEBUG MAIN: Cached entry found. Score: {cached.get('excitement_score')}")
-        else:
-            print(f"DEBUG MAIN: No cache entry found.")
-
     if cached and 'excitement_score' in cached:
         return {
             "game_id": game_id,
@@ -161,16 +158,14 @@ def get_game_excitement(game_id: str):
         }
     elif cached:
         # Fallback for old cache format (shouldn't happen after backfill)
-        excitement = calculate_excitement_score(
-            cached['wp_history'],
-            cached['home_score'],
-            cached['away_score'],
-            cached['is_overtime'],
-            cached.get('score_history')
+        rating_input = RatingInput(
+            wp_history=tuple(cached['wp_history']),
+            home_team_won=cached['home_score'] > cached['away_score'],
         )
+        excitement_score = calculate_rating(rating_input)
         return {
             "game_id": game_id,
-            "excitement_score": round(excitement, 1),
+            "excitement_score": round(excitement_score, 1),
             "cached": True
         }
     
@@ -185,20 +180,15 @@ def get_game_excitement(game_id: str):
     if not wp_data:
         raise HTTPException(status_code=404, detail=f"Game {game_id} not found or no WP data available")
     
-    excitement = calculate_excitement_score(
-        wp_data['wp_history'],
-        wp_data['home_score'],
-        wp_data['away_score'],
-        wp_data['is_overtime'],
-        wp_data.get('score_history')
+    rating_input = RatingInput(
+        wp_history=tuple(wp_data['wp_history']),
+        home_team_won=wp_data['home_score'] > wp_data['away_score'],
     )
-    
-    if game_id == "401772779":
-        print(f"DEBUG MAIN: Calculated fresh score: {excitement}")
+    excitement_score = calculate_rating(rating_input)
     
     # Cache the result (even if from ESPN)
     fetcher.cache[game_id] = {
-        'excitement_score': round(excitement, 1),
+        'excitement_score': round(excitement_score, 1),
         'home_score': wp_data['home_score'],
         'away_score': wp_data['away_score'],
         'is_overtime': wp_data['is_overtime'],
@@ -210,7 +200,7 @@ def get_game_excitement(game_id: str):
     
     return {
         "game_id": game_id,
-        "excitement_score": round(excitement, 1),
+        "excitement_score": round(excitement_score, 1),
         "cached": False,
         "source": wp_data.get('source', 'nflfastR')
     }
@@ -237,19 +227,17 @@ def get_week_excitement(week: int, season: int = 2024, season_type: str = 'REG')
             "games": []
         }
     
-    # Calculate excitement for each game
+    # Calculate the rating for each game.
     results = []
     for game_id, wp_data in games_data.items():
-        score = calculate_excitement_score(
-            wp_data['wp_history'],
-            wp_data['home_score'],
-            wp_data['away_score'],
-            wp_data['is_overtime'],
-            wp_data.get('score_history')
+        rating_input = RatingInput(
+            wp_history=tuple(wp_data['wp_history']),
+            home_team_won=wp_data['home_score'] > wp_data['away_score'],
         )
+        excitement_score = calculate_rating(rating_input)
         results.append({
             "game_id": game_id,
-            "excitement_score": round(score, 1),
+            "excitement_score": round(excitement_score, 1),
             "home_score": wp_data['home_score'],
             "away_score": wp_data['away_score'],
             "is_overtime": wp_data['is_overtime']
@@ -276,16 +264,15 @@ def refresh_game(game_id: str):
     if not wp_data:
         raise HTTPException(status_code=404, detail=f"Game {game_id} not found")
     
-    excitement = calculate_excitement_score(
-        wp_data['wp_history'],
-        wp_data['home_score'],
-        wp_data['away_score'],
-        wp_data['is_overtime']
+    rating_input = RatingInput(
+        wp_history=tuple(wp_data['wp_history']),
+        home_team_won=wp_data['home_score'] > wp_data['away_score'],
     )
+    excitement_score = calculate_rating(rating_input)
     
     return {
         "game_id": game_id,
-        "excitement_score": round(excitement, 1),
+        "excitement_score": round(excitement_score, 1),
         "refreshed": True
     }
 
