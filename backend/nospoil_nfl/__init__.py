@@ -1,0 +1,1 @@
+"""NoSpoil NFL application package."""

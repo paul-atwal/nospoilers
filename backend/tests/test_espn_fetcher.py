@@ -10,7 +10,7 @@ from unittest.mock import Mock
 import pytest
 
 from backend import espn_fetcher
-from backend.rating_input import GameRatingInput, RatingInput
+from backend.rating_input import GameRatingInput
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
@@ -21,14 +21,16 @@ class NormalizationCase:
     name: str
     game_id: str
     fixture_name: str
-    expected_rating_input: RatingInput
+    expected_game_data: GameRatingInput
 
 
 REGULATION_CASE = NormalizationCase(
     name="regulation",
     game_id="401772840",
     fixture_name="espn_summary_regulation.json",
-    expected_rating_input={
+    expected_game_data={
+        "game_id": "401772840",
+        "source": "ESPN",
         "wp_history": [0.708, 0.6884, 0.6791, 1.0, 1.0],
         "score_history": [],
         "home_score": 29,
@@ -41,7 +43,9 @@ OVERTIME_CASE = NormalizationCase(
     name="overtime",
     game_id="401772888",
     fixture_name="espn_summary_overtime.json",
-    expected_rating_input={
+    expected_game_data={
+        "game_id": "401772888",
+        "source": "ESPN",
         "wp_history": [0.7227, 0.7026, 0.6752, 0.8934, 1.0],
         "score_history": [],
         "home_score": 34,
@@ -59,11 +63,7 @@ def load_summary(name: str) -> dict[str, Any]:
 
 
 def expected_result(case: NormalizationCase) -> GameRatingInput:
-    return GameRatingInput(
-        **case.expected_rating_input,
-        game_id=case.game_id,
-        source="ESPN",
-    )
+    return deepcopy(case.expected_game_data)
 
 
 @pytest.mark.parametrize(

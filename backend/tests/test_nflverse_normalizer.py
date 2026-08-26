@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -8,7 +9,7 @@ import pandas as pd
 import pytest
 
 from backend.nflverse_normalizer import normalize_nflverse_game_data
-from backend.rating_input import GameRatingInput, RatingInput
+from backend.rating_input import GameRatingInput
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
@@ -19,14 +20,16 @@ class NormalizationCase:
     name: str
     game_id: str
     fixture_name: str
-    expected_rating_input: RatingInput
+    expected_game_data: GameRatingInput
 
 
 REGULATION_CASE = NormalizationCase(
     name="regulation",
     game_id="2025_03_NYJ_TB",
     fixture_name="nflverse_pbp_regulation.json",
-    expected_rating_input={
+    expected_game_data={
+        "game_id": "2025_03_NYJ_TB",
+        "source": "nflfastR",
         "wp_history": [
             0.566792041063309,
             0.522391974925995,
@@ -53,7 +56,9 @@ OVERTIME_CASE = NormalizationCase(
     name="overtime",
     game_id="2025_12_NYG_DET",
     fixture_name="nflverse_pbp_overtime.json",
-    expected_rating_input={
+    expected_game_data={
+        "game_id": "2025_12_NYG_DET",
+        "source": "nflfastR",
         "wp_history": [
             0.566792041063309,
             0.514530062675476,
@@ -85,11 +90,7 @@ def load_plays(name: str) -> pd.DataFrame:
 
 
 def expected_result(case: NormalizationCase) -> GameRatingInput:
-    return GameRatingInput(
-        **case.expected_rating_input,
-        game_id=case.game_id,
-        source="nflfastR",
-    )
+    return deepcopy(case.expected_game_data)
 
 
 @pytest.mark.parametrize(
