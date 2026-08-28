@@ -1,0 +1,53 @@
+"""Public game-domain model API."""
+
+from .models import (
+    DomainValidationError,
+    Game,
+    GameId,
+    GameOutcome,
+    GameRating,
+    GameState,
+    GameStatus,
+    OddsSnapshot,
+    RatingRetry,
+    RatingSource,
+    RatingState,
+    RecordScope,
+    RecordSnapshot,
+    Score,
+    SeasonPhase,
+    SeasonWeek,
+    TeamGameSnapshot,
+    TeamRecord,
+)
+from .rules import (
+    can_transition_game_state,
+    can_transition_rating_state,
+    derive_final_outcome,
+    rating_input_for_outcome,
+)
+
+__all__ = [
+    "DomainValidationError",
+    "Game",
+    "GameId",
+    "GameOutcome",
+    "GameRating",
+    "GameState",
+    "GameStatus",
+    "OddsSnapshot",
+    "RatingRetry",
+    "RatingSource",
+    "RatingState",
+    "RecordScope",
+    "RecordSnapshot",
+    "Score",
+    "SeasonPhase",
+    "SeasonWeek",
+    "TeamGameSnapshot",
+    "TeamRecord",
+    "can_transition_game_state",
+    "can_transition_rating_state",
+    "derive_final_outcome",
+    "rating_input_for_outcome",
+]
