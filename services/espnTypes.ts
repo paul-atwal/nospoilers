@@ -35,6 +35,6 @@ export interface EspnEvent {
 
 export interface EspnScoreboard {
   events?: EspnEvent[];
-  season?: { type?: number };
+  season?: { type?: number; year?: number };
   week?: { number?: number };
 }

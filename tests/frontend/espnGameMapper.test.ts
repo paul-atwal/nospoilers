@@ -6,8 +6,11 @@ describe('mapEspnEventToGame', () => {
   it('maps a final postseason event without changing regular-season records', () => {
     const game = mapEspnEventToGame(finalPostseasonEvent, {
       oddsByGameId: {},
-      seasonType: 3,
-      weekLabel: 'Wild Card',
+      seasonWeek: {
+        season: 2026,
+        phase: 'postseason',
+        week: 1,
+      },
     });
 
     expect(game).toMatchObject({
@@ -19,8 +22,11 @@ describe('mapEspnEventToGame', () => {
       homeRecord: '12-5',
       awayRecord: '11-6',
       status: 'Final',
-      weekLabel: 'Wild Card',
-      seasonType: 3,
+      seasonWeek: {
+        season: 2026,
+        phase: 'postseason',
+        week: 1,
+      },
       excitementScore: null,
       isUpcoming: false,
       isLive: false,

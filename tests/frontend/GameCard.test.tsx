@@ -78,13 +78,35 @@ describe('GameCard records', () => {
         game={makeGame({
           homeRecord: '12-5',
           awayRecord: '11-6',
-          seasonType: 3,
-          weekLabel: 'Wild Card',
+          seasonWeek: {
+            season: 2026,
+            phase: 'postseason',
+            week: 1,
+          },
         })}
       />,
     );
 
     expect(screen.getByText('12-5')).not.toBeNull();
     expect(screen.getByText('11-6')).not.toBeNull();
+  });
+});
+
+describe('GameCard week context', () => {
+  it('shows the shared postseason label in the season view', () => {
+    render(
+      <GameCard
+        game={makeGame({
+          seasonWeek: {
+            season: 2026,
+            phase: 'postseason',
+            week: 1,
+          },
+        })}
+        showWeekContext
+      />,
+    );
+
+    expect(screen.getByText('Wild Card')).not.toBeNull();
   });
 });

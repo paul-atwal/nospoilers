@@ -6,10 +6,16 @@ import { Game, WeekInfo } from './types';
 import { fetchGameExcitement } from './services/excitementApi';
 import { fetchCurrentWeek, fetchSchedule } from './services/espnSchedule';
 import { Loader2, AlertCircle, Info } from 'lucide-react';
+import {
+  getNextSeasonWeek,
+  getPreviousSeasonWeek,
+  getRankingWeeksThrough,
+  getWeekInfo,
+} from './utils/scheduleWeek';
 
 const App: React.FC = () => {
   const [currentWeek, setCurrentWeek] = useState<WeekInfo | null>(null);
-  const [actualCurrentScheduleWeek, setActualCurrentScheduleWeek] = useState<number | null>(null);
+  const [actualCurrentWeek, setActualCurrentWeek] = useState<WeekInfo | null>(null);
   const [games, setGames] = useState<Game[]>([]);
 
   // Separate state for season top games to avoid complexity
@@ -28,7 +34,7 @@ const App: React.FC = () => {
     const init = async () => {
       const weekInfo = await fetchCurrentWeek();
       setCurrentWeek(weekInfo);
-      setActualCurrentScheduleWeek(weekInfo.scheduleWeek);
+      setActualCurrentWeek(weekInfo);
     };
     init();
   }, []);
@@ -43,7 +49,7 @@ const App: React.FC = () => {
       setError(null);
       setGames([]); // Clear prev games
       try {
-        const fetchedGames = await fetchSchedule(currentWeek.scheduleWeek);
+        const fetchedGames = await fetchSchedule(currentWeek.seasonWeek);
         
         // Initial sort by status
         const sortedGames = fetchedGames.sort((a, b) => {
@@ -116,7 +122,7 @@ const App: React.FC = () => {
 
   // 3. Special Handler for Season Mode (Bulk fetch then sort)
   useEffect(() => {
-      if (viewMode === 'season' && actualCurrentScheduleWeek) {
+      if (viewMode === 'season' && actualCurrentWeek) {
           const loadSeasonBest = async () => {
               setLoadingSchedule(true);
               setError(null);
@@ -126,14 +132,11 @@ const App: React.FC = () => {
                       return;
                   }
 
-                  // Fetch all weeks of current season (use actual current week, not viewed week)
-                  const maxWeek = actualCurrentScheduleWeek;
-                  const startWeek = 1;
-                  
-                  const schedulePromises = [];
-                  for(let i = startWeek; i <= maxWeek; i++) {
-                      schedulePromises.push(fetchSchedule(i));
-                  }
+                  // Use the actual current week, not the week selected in navigation.
+                  const rankingWeeks = getRankingWeeksThrough(
+                    actualCurrentWeek.seasonWeek,
+                  );
+                  const schedulePromises = rankingWeeks.map(fetchSchedule);
                   
                   const weeklySchedules = await Promise.all(schedulePromises);
                   const allGames = weeklySchedules.flat().filter(g => !g.isUpcoming);
@@ -160,15 +163,18 @@ const App: React.FC = () => {
           };
           loadSeasonBest();
       }
-  }, [viewMode, actualCurrentScheduleWeek]);
+  }, [viewMode, actualCurrentWeek]);
 
-  const handleWeekChange = (scheduleWeek: number) => {
-    if (!currentWeek) return;
-    setCurrentWeek({ 
-        ...currentWeek, 
-        scheduleWeek,
-        seasonType: scheduleWeek > 18 ? 3 : 2
-    });
+  const handlePreviousWeek = () => {
+    setCurrentWeek((weekInfo) => weekInfo
+      ? getWeekInfo(getPreviousSeasonWeek(weekInfo.seasonWeek))
+      : null);
+  };
+
+  const handleNextWeek = () => {
+    setCurrentWeek((weekInfo) => weekInfo
+      ? getWeekInfo(getNextSeasonWeek(weekInfo.seasonWeek))
+      : null);
   };
 
   if (!currentWeek) {
@@ -186,7 +192,9 @@ const App: React.FC = () => {
     <div className="min-h-screen flex flex-col bg-[#121212] text-white font-sans">
       <Header 
         currentWeek={currentWeek} 
-        onWeekChange={handleWeekChange} 
+        currentSeasonLabel={actualCurrentWeek?.seasonLabel ?? currentWeek.seasonLabel}
+        onPreviousWeek={handlePreviousWeek}
+        onNextWeek={handleNextWeek}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
       />

@@ -12,8 +12,11 @@ const baseGame: Game = {
   kickoffTime: '1:00 PM PST',
   dayOfWeek: 'SUN',
   dateLabel: '11/23',
-  weekLabel: 'Week 12',
-  seasonType: 2,
+  seasonWeek: {
+    season: 2026,
+    phase: 'regular_season',
+    week: 12,
+  },
   excitementScore: 6.5,
   spoilerData: {
     homeScore: 24,
