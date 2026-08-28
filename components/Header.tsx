@@ -5,44 +5,21 @@ import { WeekInfo } from '../types';
 
 interface HeaderProps {
   currentWeek: WeekInfo;
-  onWeekChange: (scheduleWeek: number) => void;
+  currentSeasonLabel: string;
+  onPreviousWeek: () => void;
+  onNextWeek: () => void;
   viewMode: 'weekly' | 'season';
   onViewModeChange: (mode: 'weekly' | 'season') => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ currentWeek, onWeekChange, viewMode, onViewModeChange }) => {
-
-  // Calculate current NFL season (season starts in September)
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth(); // 0-indexed (0 = Jan, 8 = Sept)
-  const seasonStartYear = currentMonth >= 8 ? currentYear : currentYear - 1; // Sept or later = current year's season
-  const seasonLabel = `${seasonStartYear}-${String(seasonStartYear + 1).slice(-2)}`;
-
-  const handlePrev = () => {
-    if (currentWeek.scheduleWeek > 1) {
-      onWeekChange(currentWeek.scheduleWeek - 1);
-    }
-  };
-
-  const handleNext = () => {
-    // Cap at week 23 (Super Bowl)
-    if (currentWeek.scheduleWeek < 23) {
-      onWeekChange(currentWeek.scheduleWeek + 1);
-    }
-  };
-
-  const getWeekDisplay = (w: number) => {
-      if (w <= 18) return { title: "Regular Season", subtitle: `Week ${w}` };
-      if (w === 19) return { title: "Postseason", subtitle: "Wild Card" };
-      if (w === 20) return { title: "Postseason", subtitle: "Divisional Round" };
-      if (w === 21) return { title: "Postseason", subtitle: "Championship" };
-      if (w === 22) return { title: "Postseason", subtitle: "Pro Bowl" };
-      if (w === 23) return { title: "Postseason", subtitle: "Super Bowl" };
-      return { title: "Postseason", subtitle: "Week " + w };
-  };
-
-  const { title, subtitle } = getWeekDisplay(currentWeek.scheduleWeek);
+const Header: React.FC<HeaderProps> = ({
+  currentWeek,
+  currentSeasonLabel,
+  onPreviousWeek,
+  onNextWeek,
+  viewMode,
+  onViewModeChange,
+}) => {
 
   return (
     <header className="sticky top-0 z-50 bg-neutral-900/90 backdrop-blur-md border-b border-white/10 shadow-lg">
@@ -84,26 +61,26 @@ const Header: React.FC<HeaderProps> = ({ currentWeek, onWeekChange, viewMode, on
         {viewMode === 'weekly' && (
              <div className="mt-3 flex items-center justify-between bg-neutral-800/50 rounded-lg border border-white/5 p-1">
                 <button 
-                  onClick={handlePrev}
-                  disabled={currentWeek.scheduleWeek <= 1}
-                  className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                  onClick={onPreviousWeek}
+                  className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300"
+                  aria-label="Previous week"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 
                 <div className="flex flex-col items-center justify-center">
                   <span className="font-bold text-white tracking-wide uppercase text-xs">
-                    {subtitle}
+                    {currentWeek.label}
                   </span>
                   <span className="text-[10px] font-medium text-blue-400 uppercase">
-                    {title}
+                    {currentWeek.title}
                   </span>
                 </div>
 
                 <button
-                  onClick={handleNext}
-                  disabled={currentWeek.scheduleWeek >= 23}
-                  className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                  onClick={onNextWeek}
+                  className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300"
+                  aria-label="Next week"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -113,7 +90,7 @@ const Header: React.FC<HeaderProps> = ({ currentWeek, onWeekChange, viewMode, on
         {/* Season Mode Header */}
         {viewMode === 'season' && (
             <div className="mt-3 flex items-center justify-center bg-yellow-900/20 rounded-lg border border-yellow-500/20 p-2">
-                <span className="text-xs font-bold text-yellow-500 uppercase tracking-widest">Top Games of {seasonLabel}</span>
+                <span className="text-xs font-bold text-yellow-500 uppercase tracking-widest">Top Games of {currentSeasonLabel}</span>
             </div>
         )}
 

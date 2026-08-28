@@ -1,11 +1,14 @@
-import type { Game, WeekInfo } from '../types';
+import type { Game, SeasonWeek, WeekInfo } from '../types';
 import { revertRecord } from '../utils/records';
 import {
-  getWeekLabel,
-  toEspnWeek,
-  toSupportedWeekInfo,
-  type EspnWeek,
+  getCurrentNflSeason,
+  getWeekInfo,
 } from '../utils/scheduleWeek';
+import {
+  fromEspnWeek,
+  toEspnWeek,
+  type EspnWeek,
+} from './espnWeekMapper';
 import {
   collectFinalTeamResults,
   mapEspnEventToGame,
@@ -17,7 +20,7 @@ const ODDS_CACHE_KEY = 'nfl_odds_cache';
 
 const fetchScoreboard = async (params?: EspnWeek): Promise<EspnScoreboard> => {
   const query = params
-    ? `?week=${params.week}&seasontype=${params.seasonType}&limit=100`
+    ? `?dates=${params.season}&week=${params.week}&seasontype=${params.seasonType}&limit=100`
     : '';
   const response = await fetch(`${ESPN_API_BASE}${query}`);
   if (!response.ok) throw new Error('Failed to fetch ESPN data');
@@ -55,13 +58,13 @@ const setCachedOdds = (odds: Record<string, string>): void => {
 };
 
 const fetchOddsForUpcomingGames = async (
-  currentScheduleWeek: number,
+  currentWeek: SeasonWeek,
 ): Promise<Record<string, string>> => {
   const cached = getCachedOdds();
   if (cached) return cached;
 
   try {
-    const scoreboard = await fetchScoreboard(toEspnWeek(currentScheduleWeek));
+    const scoreboard = await fetchScoreboard(toEspnWeek(currentWeek));
     const oddsByGameId: Record<string, string> = {};
 
     for (const event of scoreboard.events ?? []) {
@@ -83,26 +86,34 @@ export const fetchCurrentWeek = async (): Promise<WeekInfo> => {
   try {
     const scoreboard = await fetchScoreboard();
     const week = scoreboard.week?.number ?? 1;
-    const seasonType = scoreboard.season?.type ?? 2;
-    return toSupportedWeekInfo(week, seasonType);
+    const season = scoreboard.season?.year ?? getCurrentNflSeason();
+    const seasonType = scoreboard.season?.type ?? 0;
+    const seasonWeek = fromEspnWeek(season, seasonType, week);
+    if (!seasonWeek) throw new Error('ESPN returned an unsupported season week');
+    return getWeekInfo(seasonWeek);
   } catch (error) {
     console.error('Failed to fetch current week', error);
-    return { scheduleWeek: 1, seasonType: 2, label: 'Week 1' };
+    return getWeekInfo({
+      season: getCurrentNflSeason(),
+      phase: 'regular_season',
+      week: 1,
+    });
   }
 };
 
 const adjustRecordsForFutureWeek = async (
   games: Game[],
-  viewingScheduleWeek: number,
-  currentScheduleWeek: number,
+  viewingWeek: SeasonWeek,
+  currentWeek: SeasonWeek,
 ): Promise<Game[]> => {
-  const requiresAdjustment = currentScheduleWeek <= 18
-    && viewingScheduleWeek <= 18
-    && viewingScheduleWeek > currentScheduleWeek;
+  const requiresAdjustment = currentWeek.phase === 'regular_season'
+    && viewingWeek.phase === 'regular_season'
+    && viewingWeek.season === currentWeek.season
+    && viewingWeek.week > currentWeek.week;
   if (!requiresAdjustment) return games;
 
   try {
-    const scoreboard = await fetchScoreboard(toEspnWeek(currentScheduleWeek));
+    const scoreboard = await fetchScoreboard(toEspnWeek(currentWeek));
     const results = collectFinalTeamResults(scoreboard.events ?? []);
 
     return games.map((game) => {
@@ -125,23 +136,21 @@ const adjustRecordsForFutureWeek = async (
   }
 };
 
-export const fetchSchedule = async (scheduleWeek: number): Promise<Game[]> => {
+export const fetchSchedule = async (seasonWeek: SeasonWeek): Promise<Game[]> => {
   try {
-    const espnWeek = toEspnWeek(scheduleWeek);
+    const espnWeek = toEspnWeek(seasonWeek);
     const scoreboard = await fetchScoreboard(espnWeek);
     const currentWeek = await fetchCurrentWeek();
-    const oddsByGameId = await fetchOddsForUpcomingGames(currentWeek.scheduleWeek);
-    const weekLabel = getWeekLabel(espnWeek.week, espnWeek.seasonType);
+    const oddsByGameId = await fetchOddsForUpcomingGames(currentWeek.seasonWeek);
     const games = (scoreboard.events ?? []).map((event) => mapEspnEventToGame(event, {
       oddsByGameId,
-      seasonType: espnWeek.seasonType,
-      weekLabel,
+      seasonWeek,
     }));
 
     return adjustRecordsForFutureWeek(
       games,
-      scheduleWeek,
-      currentWeek.scheduleWeek,
+      seasonWeek,
+      currentWeek.seasonWeek,
     );
   } catch (error) {
     console.error('Error fetching NFL schedule', error);

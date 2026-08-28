@@ -5,7 +5,20 @@ export interface GameSpoilerData {
   summary: string;
 }
 
-export type SupportedSeasonType = 2 | 3;
+export type SeasonPhase = 'preseason' | 'regular_season' | 'postseason';
+
+export interface SeasonWeek {
+  readonly season: number;
+  readonly phase: SeasonPhase;
+  readonly week: number;
+}
+
+export interface WeekInfo {
+  readonly seasonWeek: SeasonWeek;
+  readonly title: string;
+  readonly label: string;
+  readonly seasonLabel: string;
+}
 
 export interface Game {
   id: string;
@@ -21,8 +34,7 @@ export interface Game {
   kickoffTime: string;
   dayOfWeek: string; // e.g. "Sun", "Mon"
   dateLabel: string; // e.g. "11/23"
-  weekLabel: string; // e.g. "Week 12" or "Wild Card"
-  seasonType: SupportedSeasonType;
+  seasonWeek: SeasonWeek;
   excitementScore: number | null; // Null while loading
   isEstimated?: boolean; // True if calculated using fallback logic
   spoilerData: GameSpoilerData;
@@ -30,10 +42,4 @@ export interface Game {
   isUpcoming?: boolean;
   isLive?: boolean;
   odds?: string;
-}
-
-export interface WeekInfo {
-  seasonType: SupportedSeasonType;
-  scheduleWeek: number; // 1-18 regular season, 19-23 postseason
-  label: string;
 }

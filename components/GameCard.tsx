@@ -4,6 +4,7 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Game } from '../types';
 import { getExcitementColor } from '../utils/formatting';
 import { getDisplayRecord } from '../utils/records';
+import { getWeekInfo } from '../utils/scheduleWeek';
 
 interface GameCardProps {
   game: Game;
@@ -19,6 +20,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
   const isMissingData = score === -1;
 
   const colorClasses = getExcitementColor(score);
+  const weekInfo = getWeekInfo(game.seasonWeek);
   
   const isHomeWinner = isRevealed && game.homeScore > game.awayScore;
   const isAwayWinner = isRevealed && game.awayScore > game.homeScore;
@@ -34,7 +36,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
     side,
     isFinal,
     isRevealed,
-    isPostseason: game.seasonType === 3,
+    isPostseason: game.seasonWeek.phase === 'postseason',
     homeScore: game.homeScore,
     awayScore: game.awayScore,
   });
@@ -66,7 +68,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
                         <span className={game.isLive ? "text-red-400" : ""}>{game.status}</span>
                         <span className="text-neutral-600">•</span>
                         {showWeekContext ? (
-                             <span className="text-blue-400">{game.weekLabel}</span>
+                             <span className="text-blue-400">{weekInfo.label}</span>
                         ) : (
                              <span className="text-neutral-500">{game.dayOfWeek} {game.kickoffTime}</span>
                         )}

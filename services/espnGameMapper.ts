@@ -1,4 +1,4 @@
-import type { Game, SupportedSeasonType } from '../types';
+import type { Game, SeasonWeek } from '../types';
 import {
   type GameResult,
   selectRegularSeasonRecord,
@@ -7,8 +7,7 @@ import type { EspnCompetitor, EspnEvent } from './espnTypes';
 
 export interface EspnGameMappingContext {
   oddsByGameId: Readonly<Record<string, string>>;
-  seasonType: SupportedSeasonType;
-  weekLabel: string;
+  seasonWeek: SeasonWeek;
 }
 
 const getCompetitor = (
@@ -22,7 +21,7 @@ const getCompetitor = (
 
 export const mapEspnEventToGame = (
   event: EspnEvent,
-  { oddsByGameId, seasonType, weekLabel }: EspnGameMappingContext,
+  { oddsByGameId, seasonWeek }: EspnGameMappingContext,
 ): Game => {
   const competition = event.competitions[0];
   if (!competition) throw new Error(`ESPN event ${event.id} has no competition`);
@@ -65,8 +64,7 @@ export const mapEspnEventToGame = (
     kickoffTime,
     dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'short', timeZone }).toUpperCase(),
     dateLabel: date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', timeZone }),
-    weekLabel,
-    seasonType,
+    seasonWeek,
     excitementScore: isUpcoming ? 0 : null,
     isEstimated: false,
     isUpcoming,
