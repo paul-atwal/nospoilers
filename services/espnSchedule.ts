@@ -1,5 +1,5 @@
 import type { Game, SeasonWeek, WeekInfo } from '../types';
-import { revertRecord } from '../utils/records';
+import { revertPregameSnapshot } from '../utils/records';
 import {
   getCurrentNflSeason,
   getWeekInfo,
@@ -106,10 +106,12 @@ const adjustRecordsForFutureWeek = async (
   viewingWeek: SeasonWeek,
   currentWeek: SeasonWeek,
 ): Promise<Game[]> => {
-  const requiresAdjustment = currentWeek.phase === 'regular_season'
-    && viewingWeek.phase === 'regular_season'
-    && viewingWeek.season === currentWeek.season
+  const isLaterRegularSeasonWeek = viewingWeek.phase === 'regular_season'
     && viewingWeek.week > currentWeek.week;
+  const isUpcomingPostseason = viewingWeek.phase === 'postseason';
+  const requiresAdjustment = currentWeek.phase === 'regular_season'
+    && viewingWeek.season === currentWeek.season
+    && (isLaterRegularSeasonWeek || isUpcomingPostseason);
   if (!requiresAdjustment) return games;
 
   try {
@@ -123,10 +125,10 @@ const adjustRecordsForFutureWeek = async (
       return {
         ...game,
         homeRecord: homeResult
-          ? revertRecord(game.homeRecord, homeResult)
+          ? revertPregameSnapshot(game.homeRecord, homeResult)
           : game.homeRecord,
         awayRecord: awayResult
-          ? revertRecord(game.awayRecord, awayResult)
+          ? revertPregameSnapshot(game.awayRecord, awayResult)
           : game.awayRecord,
       };
     });

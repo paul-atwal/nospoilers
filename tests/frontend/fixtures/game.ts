@@ -6,8 +6,26 @@ const baseGame: Game = {
   awayTeam: 'Away Team',
   homeScore: 24,
   awayScore: 17,
-  homeRecord: '8-2',
-  awayRecord: '7-3',
+  homeRecord: {
+    pregame: {
+      record: { wins: 8, losses: 2, ties: 0 },
+      scope: 'regular_season',
+    },
+    postgame: {
+      record: { wins: 9, losses: 2, ties: 0 },
+      scope: 'regular_season',
+    },
+  },
+  awayRecord: {
+    pregame: {
+      record: { wins: 7, losses: 3, ties: 0 },
+      scope: 'regular_season',
+    },
+    postgame: {
+      record: { wins: 7, losses: 4, ties: 0 },
+      scope: 'regular_season',
+    },
+  },
   status: 'Final',
   kickoffTime: '1:00 PM PST',
   dayOfWeek: 'SUN',
