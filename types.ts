@@ -20,6 +20,24 @@ export interface WeekInfo {
   readonly seasonLabel: string;
 }
 
+export type RecordScope = 'preseason' | 'regular_season' | 'season_to_date';
+
+export interface TeamRecord {
+  readonly wins: number;
+  readonly losses: number;
+  readonly ties: number;
+}
+
+export interface RecordSnapshot {
+  readonly record: TeamRecord;
+  readonly scope: RecordScope;
+}
+
+export interface GameRecordSnapshots {
+  readonly pregame: RecordSnapshot;
+  readonly postgame?: RecordSnapshot;
+}
+
 export interface Game {
   id: string;
   homeTeam: string;
@@ -28,8 +46,8 @@ export interface Game {
   awayTeamLogo?: string;
   homeScore: number;
   awayScore: number;
-  homeRecord: string; // e.g. "8-2"
-  awayRecord: string; // e.g. "7-3"
+  homeRecord: GameRecordSnapshots | null;
+  awayRecord: GameRecordSnapshots | null;
   status: string; // e.g., "Final", "Upcoming"
   kickoffTime: string;
   dayOfWeek: string; // e.g. "Sun", "Mon"

@@ -1,7 +1,18 @@
-import type { Game, SeasonWeek } from '../types';
+import type {
+  Game,
+  GameRecordSnapshots,
+  RecordScope,
+  SeasonWeek,
+} from '../types';
 import {
+  buildPostseasonRecordSnapshots,
+  buildRecordSnapshots,
+  deriveAddedResults,
+  getTeamResult,
+  revertGameResult,
+  selectCurrentTeamRecord,
   type GameResult,
-  selectRegularSeasonRecord,
+  selectRegularSeasonTeamRecord,
 } from '../utils/records';
 import type { EspnCompetitor, EspnEvent } from './espnTypes';
 
@@ -17,6 +28,54 @@ const getCompetitor = (
   const competitor = competitors.find(({ homeAway }) => homeAway === side);
   if (!competitor) throw new Error(`ESPN event is missing its ${side} competitor`);
   return competitor;
+};
+
+const getRecordScope = (seasonWeek: SeasonWeek): RecordScope => {
+  if (seasonWeek.phase === 'preseason') return 'preseason';
+  if (seasonWeek.phase === 'regular_season') return 'regular_season';
+  return 'season_to_date';
+};
+
+const prepareRecordSnapshots = (
+  competitor: EspnCompetitor,
+  seasonWeek: SeasonWeek,
+  currentResult?: GameResult,
+): GameRecordSnapshots | null => {
+  const sourceRecord = selectCurrentTeamRecord(competitor.records);
+  if (!sourceRecord) return null;
+
+  const pregameRecord = currentResult
+    ? revertGameResult(sourceRecord, currentResult)
+    : sourceRecord;
+
+  if (seasonWeek.phase !== 'postseason') {
+    return buildRecordSnapshots(
+      pregameRecord,
+      getRecordScope(seasonWeek),
+      currentResult,
+    );
+  }
+
+  const regularSeasonRecord = selectRegularSeasonTeamRecord(competitor.records);
+  if (regularSeasonRecord) {
+    const priorPostseasonResults = deriveAddedResults(
+      regularSeasonRecord,
+      pregameRecord,
+    );
+    if (priorPostseasonResults) {
+      return buildPostseasonRecordSnapshots(
+        regularSeasonRecord,
+        priorPostseasonResults,
+        currentResult,
+      );
+    }
+  }
+
+  return buildRecordSnapshots(
+    pregameRecord,
+    'season_to_date',
+    currentResult,
+  );
 };
 
 export const mapEspnEventToGame = (
@@ -41,6 +100,12 @@ export const mapEspnEventToGame = (
 
   const homeScore = Number.parseInt(home.score ?? '0', 10);
   const awayScore = Number.parseInt(away.score ?? '0', 10);
+  const homeResult = isFinal
+    ? getTeamResult('home', homeScore, awayScore)
+    : undefined;
+  const awayResult = isFinal
+    ? getTeamResult('away', homeScore, awayScore)
+    : undefined;
   const date = new Date(event.date);
   const timeZone = 'America/Los_Angeles';
   const kickoffTime = date.toLocaleTimeString('en-US', {
@@ -58,8 +123,8 @@ export const mapEspnEventToGame = (
     awayTeamLogo: away.team.logo,
     homeScore,
     awayScore,
-    homeRecord: selectRegularSeasonRecord(home.records),
-    awayRecord: selectRegularSeasonRecord(away.records),
+    homeRecord: prepareRecordSnapshots(home, seasonWeek, homeResult),
+    awayRecord: prepareRecordSnapshots(away, seasonWeek, awayResult),
     status,
     kickoffTime,
     dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'short', timeZone }).toUpperCase(),
@@ -94,12 +159,18 @@ export const collectFinalTeamResults = (
       const teamName = competitor.team.shortDisplayName || competitor.team.displayName;
       if (!teamName) continue;
 
-      const score = Number.parseInt(competitor.score ?? '0', 10);
       const opponent = competitors.find(({ id }) => id !== competitor.id);
-      const opponentScore = Number.parseInt(opponent?.score ?? '0', 10);
-      const result: GameResult = score === opponentScore
-        ? 'tie'
-        : score > opponentScore ? 'win' : 'loss';
+      if (!opponent) continue;
+
+      const home = competitor.homeAway === 'home' ? competitor : opponent;
+      const away = competitor.homeAway === 'away' ? competitor : opponent;
+      const homeScore = Number.parseInt(home.score ?? '0', 10);
+      const awayScore = Number.parseInt(away.score ?? '0', 10);
+      const result = getTeamResult(
+        competitor.homeAway,
+        homeScore,
+        awayScore,
+      );
 
       results.set(teamName, result);
     }

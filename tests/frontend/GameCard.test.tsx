@@ -1,9 +1,35 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import GameCard from '../../components/GameCard';
+import type { GameRecordSnapshots, RecordScope } from '../../types';
 import { makeGame } from './fixtures/game';
 
 afterEach(cleanup);
+
+const makeRecords = (
+  pregame: readonly [number, number, number?],
+  postgame?: readonly [number, number, number?],
+  scope: RecordScope = 'regular_season',
+): GameRecordSnapshots => ({
+  pregame: {
+    record: {
+      wins: pregame[0],
+      losses: pregame[1],
+      ties: pregame[2] ?? 0,
+    },
+    scope,
+  },
+  ...(postgame ? {
+    postgame: {
+      record: {
+        wins: postgame[0],
+        losses: postgame[1],
+        ties: postgame[2] ?? 0,
+      },
+      scope,
+    },
+  } : {}),
+});
 
 describe('GameCard scores', () => {
   it('hides scores until reveal', () => {
@@ -45,7 +71,7 @@ describe('GameCard scores', () => {
 
 describe('GameCard records', () => {
   it('shows pregame records while hidden and postgame records after reveal', () => {
-    render(<GameCard game={makeGame({ homeRecord: '9-2', awayRecord: '7-4' })} />);
+    render(<GameCard game={makeGame()} />);
 
     expect(screen.getByText('8-2')).not.toBeNull();
     expect(screen.getByText('7-3')).not.toBeNull();
@@ -62,22 +88,27 @@ describe('GameCard records', () => {
         game={makeGame({
           homeScore: 20,
           awayScore: 20,
-          homeRecord: '8-2-1',
-          awayRecord: '7-3-1',
+          homeRecord: makeRecords([8, 2], [8, 2, 1]),
+          awayRecord: makeRecords([7, 3], [7, 3, 1]),
         })}
       />,
     );
 
     expect(screen.getByText('8-2')).not.toBeNull();
     expect(screen.getByText('7-3')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal Score' }));
+
+    expect(screen.getByText('8-2-1')).not.toBeNull();
+    expect(screen.getByText('7-3-1')).not.toBeNull();
   });
 
-  it('keeps regular-season records unchanged for a postseason game', () => {
+  it('shows cumulative postseason records before and after reveal', () => {
     render(
       <GameCard
         game={makeGame({
-          homeRecord: '12-5',
-          awayRecord: '11-6',
+          homeRecord: makeRecords([12, 6], [13, 6], 'season_to_date'),
+          awayRecord: makeRecords([12, 6], [12, 7], 'season_to_date'),
           seasonWeek: {
             season: 2026,
             phase: 'postseason',
@@ -87,8 +118,18 @@ describe('GameCard records', () => {
       />,
     );
 
-    expect(screen.getByText('12-5')).not.toBeNull();
-    expect(screen.getByText('11-6')).not.toBeNull();
+    expect(screen.getAllByText('12-6')).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal Score' }));
+
+    expect(screen.getByText('13-6')).not.toBeNull();
+    expect(screen.getByText('12-7')).not.toBeNull();
+  });
+
+  it('shows an unavailable marker instead of inventing a record', () => {
+    render(<GameCard game={makeGame({ homeRecord: null, awayRecord: null })} />);
+
+    expect(screen.getAllByText('--')).toHaveLength(2);
   });
 });
 

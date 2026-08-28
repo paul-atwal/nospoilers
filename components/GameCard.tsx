@@ -1,9 +1,9 @@
 
 import React, { useState } from 'react';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
-import { Game } from '../types';
+import type { Game, GameRecordSnapshots } from '../types';
 import { getExcitementColor } from '../utils/formatting';
-import { getDisplayRecord } from '../utils/records';
+import { formatTeamRecord } from '../utils/records';
 import { getWeekInfo } from '../utils/scheduleWeek';
 
 interface GameCardProps {
@@ -30,16 +30,13 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
   const teamAbbr = oddsParts ? oddsParts[0] : '--';
   const spreadVal = oddsParts ? oddsParts.slice(1).join('') : '';
 
-  const isFinal = game.status === 'Final';
-  const displayRecord = (record: string, side: 'home' | 'away') => getDisplayRecord({
-    record,
-    side,
-    isFinal,
-    isRevealed,
-    isPostseason: game.seasonWeek.phase === 'postseason',
-    homeScore: game.homeScore,
-    awayScore: game.awayScore,
-  });
+  const displayRecord = (snapshots: GameRecordSnapshots | null): string => {
+    if (!snapshots) return '--';
+    const snapshot = isRevealed
+      ? snapshots.postgame ?? snapshots.pregame
+      : snapshots.pregame;
+    return formatTeamRecord(snapshot.record);
+  };
 
   return (
     <div className="bg-neutral-800/40 rounded-xl border border-white/5 overflow-hidden hover:border-white/10 transition-colors shadow-sm">
@@ -99,7 +96,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
                                 {game.awayTeam}
                             </span>
                             <span className="text-[10px] text-neutral-500 font-medium">
-                                {displayRecord(game.awayRecord, 'away')}
+                                {displayRecord(game.awayRecord)}
                             </span>
                         </div>
                     </div>
@@ -123,7 +120,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
                                 {game.homeTeam}
                             </span>
                              <span className="text-[10px] text-neutral-500 font-medium">
-                                {displayRecord(game.homeRecord, 'home')}
+                                {displayRecord(game.homeRecord)}
                             </span>
                         </div>
                     </div>
