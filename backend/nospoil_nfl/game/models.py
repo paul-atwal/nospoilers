@@ -196,7 +196,7 @@ class TeamGameSnapshot:
     display_name: str
     abbreviation: str
     logo_key: str | None
-    pregame_record: RecordSnapshot
+    pregame_record: RecordSnapshot | None
     postgame_record: RecordSnapshot | None = None
 
     def __post_init__(self) -> None:
@@ -205,12 +205,17 @@ class TeamGameSnapshot:
         _require_text("abbreviation", self.abbreviation)
         _require_optional_text("logo_key", self.logo_key)
 
-        if not isinstance(self.pregame_record, RecordSnapshot):
+        if (
+            self.pregame_record is not None
+            and not isinstance(self.pregame_record, RecordSnapshot)
+        ):
             raise DomainValidationError("pregame_record must be a RecordSnapshot")
         if self.postgame_record is None:
             return
         if not isinstance(self.postgame_record, RecordSnapshot):
             raise DomainValidationError("postgame_record must be a RecordSnapshot")
+        if self.pregame_record is None:
+            return
         if self.postgame_record.scope is not self.pregame_record.scope:
             raise DomainValidationError("pregame and postgame record scopes must match")
         if self.postgame_record.snapshot_at < self.pregame_record.snapshot_at:
@@ -438,7 +443,10 @@ class Game:
         }[self.season_week.phase]
 
         for side, team in (("home", self.home), ("away", self.away)):
-            if team.pregame_record.scope is not expected_scope:
+            if (
+                team.pregame_record is not None
+                and team.pregame_record.scope is not expected_scope
+            ):
                 raise DomainValidationError(
                     f"{side} pregame record must use scope {expected_scope.value}"
                 )

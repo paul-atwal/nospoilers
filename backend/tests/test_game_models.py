@@ -220,9 +220,9 @@ def test_final_game_accepts_a_confirmed_nflverse_rating() -> None:
 
 
 def test_non_final_game_cannot_have_postgame_records() -> None:
-    home = make_team("home")
     home = replace(
-        home,
+        make_team("home"),
+        pregame_record=None,
         postgame_record=make_record_snapshot(
             snapshot_at=CHECKED_AT + timedelta(hours=4),
         ),
@@ -233,6 +233,46 @@ def test_non_final_game_cannot_have_postgame_records() -> None:
         match="only a final game can have postgame record snapshots",
     ):
         make_game(home=home)
+
+
+def test_scheduled_game_can_have_unknown_pregame_records() -> None:
+    game = make_game(
+        home=replace(make_team("home"), pregame_record=None),
+        away=replace(make_team("away"), pregame_record=None),
+    )
+
+    assert game.home.pregame_record is None
+    assert game.away.pregame_record is None
+
+
+def test_postgame_record_is_validated_when_pregame_record_is_unknown() -> None:
+    home = replace(
+        make_team("home", scope=RecordScope.PRESEASON),
+        pregame_record=None,
+        postgame_record=make_record_snapshot(
+            scope=RecordScope.REGULAR_SEASON,
+            snapshot_at=CHECKED_AT + timedelta(hours=4),
+        ),
+    )
+
+    with pytest.raises(
+        DomainValidationError,
+        match="home postgame record must use scope preseason",
+    ):
+        make_game(
+            season_week=SeasonWeek(
+                season=2026,
+                phase=SeasonPhase.PRESEASON,
+                week=1,
+            ),
+            home=home,
+            away=make_team("away", scope=RecordScope.PRESEASON),
+            status=GameStatus(
+                state=GameState.FINAL,
+                detail="Final",
+                score=Score(home=24, away=17),
+            ),
+        )
 
 
 def test_change_timestamps_cannot_be_newer_than_their_source_check() -> None:
