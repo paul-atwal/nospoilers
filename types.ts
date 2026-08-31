@@ -20,7 +20,7 @@ export interface WeekInfo {
   readonly seasonLabel: string;
 }
 
-export type RecordScope = 'preseason' | 'regular_season' | 'season_to_date';
+export type RecordScope = 'preseason' | 'regular_season';
 
 export interface TeamRecord {
   readonly wins: number;

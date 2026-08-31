@@ -47,7 +47,7 @@ const makeEvent = ({
         id: `${id}-home`,
         homeAway: 'home',
         score: homeScore,
-        records: [{ summary: homeRecord }],
+        records: [{ name: 'overall', type: 'total', summary: homeRecord }],
         team: {
           abbreviation: 'HME',
           shortDisplayName: 'Home Team',
@@ -57,7 +57,7 @@ const makeEvent = ({
         id: `${id}-away`,
         homeAway: 'away',
         score: awayScore,
-        records: [{ summary: awayRecord }],
+        records: [{ name: 'overall', type: 'total', summary: awayRecord }],
         team: {
           abbreviation: 'AWY',
           shortDisplayName: 'Away Team',

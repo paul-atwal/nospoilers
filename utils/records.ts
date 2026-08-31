@@ -9,7 +9,9 @@ export type GameResult = 'win' | 'loss' | 'tie';
 export type TeamSide = 'home' | 'away';
 
 export interface RecordSummary {
+  name?: string;
   summary?: string;
+  type?: string;
 }
 
 export const parseTeamRecord = (record: string): TeamRecord | null => {
@@ -52,22 +54,6 @@ export const getTeamResult = (
   return (side === 'home') === homeWon ? 'win' : 'loss';
 };
 
-export const deriveAddedResults = (
-  baseRecord: TeamRecord,
-  cumulativeRecord: TeamRecord,
-): GameResult[] | null => {
-  const addedWins = cumulativeRecord.wins - baseRecord.wins;
-  const addedLosses = cumulativeRecord.losses - baseRecord.losses;
-  const addedTies = cumulativeRecord.ties - baseRecord.ties;
-  if (addedWins < 0 || addedLosses < 0 || addedTies < 0) return null;
-
-  return [
-    ...Array<GameResult>(addedWins).fill('win'),
-    ...Array<GameResult>(addedLosses).fill('loss'),
-    ...Array<GameResult>(addedTies).fill('tie'),
-  ];
-};
-
 const makeRecordSnapshot = (
   record: TeamRecord,
   scope: RecordScope,
@@ -93,22 +79,6 @@ export const buildRecordSnapshots = (
   };
 };
 
-export const buildPostseasonRecordSnapshots = (
-  regularSeasonRecord: TeamRecord,
-  priorPostseasonResults: readonly GameResult[],
-  currentResult?: GameResult,
-): GameRecordSnapshots => {
-  const pregameRecord = priorPostseasonResults.reduce(
-    applyGameResult,
-    regularSeasonRecord,
-  );
-  return buildRecordSnapshots(
-    pregameRecord,
-    'season_to_date',
-    currentResult,
-  );
-};
-
 export const revertPregameSnapshot = (
   snapshots: GameRecordSnapshots | null,
   result: GameResult,
@@ -124,35 +94,17 @@ export const revertPregameSnapshot = (
   };
 };
 
-const getRecordTotal = (record: TeamRecord): number => (
-  record.wins + record.losses + record.ties
-);
-
-export const selectRegularSeasonTeamRecord = (
+export const selectOverallTeamRecord = (
   records: readonly RecordSummary[] | undefined,
 ): TeamRecord | null => {
   if (!records?.length) return null;
 
-  const regularSeasonRecord = records.find(({ summary }) => {
-    if (!summary) return false;
-    const record = parseTeamRecord(summary);
-    return record !== null && getRecordTotal(record) === 17;
+  const overallRecord = records.find(({ name, summary, type }) => {
+    if (name !== 'overall' || type !== 'total' || !summary) return false;
+    return parseTeamRecord(summary) !== null;
   });
 
-  return regularSeasonRecord?.summary
-    ? parseTeamRecord(regularSeasonRecord.summary)
+  return overallRecord?.summary
+    ? parseTeamRecord(overallRecord.summary)
     : null;
-};
-
-export const selectCurrentTeamRecord = (
-  records: readonly RecordSummary[] | undefined,
-): TeamRecord | null => {
-  if (!records?.length) return null;
-
-  for (const { summary } of records) {
-    if (!summary) continue;
-    const record = parseTeamRecord(summary);
-    if (record) return record;
-  }
-  return null;
 };
