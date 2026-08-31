@@ -132,17 +132,30 @@ def test_status_rejects_incomplete_game_data(
         GameStatus(state=state)
 
 
-def test_postseason_game_requires_cumulative_record_scope() -> None:
+def test_postseason_game_requires_regular_season_record_scope() -> None:
+    game = make_game(
+        season_week=SeasonWeek(
+            season=2026,
+            phase=SeasonPhase.POSTSEASON,
+            week=1,
+        )
+    )
+
+    assert game.home.pregame_record.scope is RecordScope.REGULAR_SEASON
+
+
+def test_postseason_game_rejects_non_regular_season_record_scope() -> None:
     with pytest.raises(
         DomainValidationError,
-        match="home pregame record must use scope season_to_date",
+        match="home pregame record must use scope regular_season",
     ):
         make_game(
             season_week=SeasonWeek(
                 season=2026,
                 phase=SeasonPhase.POSTSEASON,
                 week=1,
-            )
+            ),
+            home=make_team("home", scope=RecordScope.PRESEASON),
         )
 
 

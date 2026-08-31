@@ -48,7 +48,6 @@ class RecordScope(StrEnum):
 
     PRESEASON = "preseason"
     REGULAR_SEASON = "regular_season"
-    SEASON_TO_DATE = "season_to_date"
 
 
 class RatingState(StrEnum):
@@ -434,7 +433,7 @@ class Game:
         expected_scope = {
             SeasonPhase.PRESEASON: RecordScope.PRESEASON,
             SeasonPhase.REGULAR_SEASON: RecordScope.REGULAR_SEASON,
-            SeasonPhase.POSTSEASON: RecordScope.SEASON_TO_DATE,
+            SeasonPhase.POSTSEASON: RecordScope.REGULAR_SEASON,
         }[self.season_week.phase]
 
         for side, team in (("home", self.home), ("away", self.away)):

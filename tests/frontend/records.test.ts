@@ -1,15 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyGameResult,
-  buildPostseasonRecordSnapshots,
   buildRecordSnapshots,
-  deriveAddedResults,
   formatTeamRecord,
   parseTeamRecord,
   revertGameResult,
   revertPregameSnapshot,
-  selectCurrentTeamRecord,
-  selectRegularSeasonTeamRecord,
+  selectOverallTeamRecord,
 } from '../../utils/records';
 
 describe('structured team records', () => {
@@ -57,69 +54,30 @@ describe('record snapshots', () => {
     });
   });
 
-  it('builds cumulative postseason pregame and postgame records', () => {
-    const snapshots = buildPostseasonRecordSnapshots(
-      { wins: 12, losses: 5, ties: 0 },
-      ['win'],
-      'loss',
-    );
-
-    expect(snapshots).toEqual({
-      pregame: {
-        record: { wins: 13, losses: 5, ties: 0 },
-        scope: 'season_to_date',
-      },
-      postgame: {
-        record: { wins: 13, losses: 6, ties: 0 },
-        scope: 'season_to_date',
-      },
-    });
-  });
 });
 
-describe('selectRegularSeasonTeamRecord', () => {
-  it('selects the complete regular-season record during the postseason', () => {
+describe('selectOverallTeamRecord', () => {
+  it('selects ESPN overall/total data instead of home or road splits', () => {
     const records = [
-      { summary: '13-6' },
-      { summary: '12-5' },
+      { name: 'Home', type: 'home', summary: '5-3' },
+      { name: 'Road', type: 'road', summary: '5-4' },
+      { name: 'overall', type: 'total', summary: '10-7' },
     ];
 
-    expect(selectRegularSeasonTeamRecord(records)).toEqual({
-      wins: 12,
-      losses: 5,
+    expect(selectOverallTeamRecord(records)).toEqual({
+      wins: 10,
+      losses: 7,
       ties: 0,
     });
   });
 
   it('returns null when ESPN supplies none', () => {
-    expect(selectRegularSeasonTeamRecord(undefined)).toBeNull();
-    expect(selectRegularSeasonTeamRecord([])).toBeNull();
+    expect(selectOverallTeamRecord(undefined)).toBeNull();
+    expect(selectOverallTeamRecord([])).toBeNull();
   });
 });
 
 describe('source record preparation', () => {
-  it('selects the first parseable current record', () => {
-    expect(selectCurrentTeamRecord([
-      { summary: 'unknown' },
-      { summary: '13-6' },
-      { summary: '12-5' },
-    ])).toEqual({ wins: 13, losses: 6, ties: 0 });
-  });
-
-  it('derives the results added to a cumulative record', () => {
-    expect(deriveAddedResults(
-      { wins: 12, losses: 5, ties: 0 },
-      { wins: 13, losses: 6, ties: 1 },
-    )).toEqual(['win', 'loss', 'tie']);
-  });
-
-  it('rejects a cumulative record that predates its base', () => {
-    expect(deriveAddedResults(
-      { wins: 12, losses: 5, ties: 0 },
-      { wins: 11, losses: 6, ties: 0 },
-    )).toBeNull();
-  });
-
   it('reverts a result without mutating the source record', () => {
     const record = { wins: 9, losses: 2, ties: 0 };
 

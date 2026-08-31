@@ -5,14 +5,11 @@ import type {
   SeasonWeek,
 } from '../types';
 import {
-  buildPostseasonRecordSnapshots,
   buildRecordSnapshots,
-  deriveAddedResults,
   getTeamResult,
   revertGameResult,
-  selectCurrentTeamRecord,
+  selectOverallTeamRecord,
   type GameResult,
-  selectRegularSeasonTeamRecord,
 } from '../utils/records';
 import type { EspnCompetitor, EspnEvent } from './espnTypes';
 
@@ -32,8 +29,7 @@ const getCompetitor = (
 
 const getRecordScope = (seasonWeek: SeasonWeek): RecordScope => {
   if (seasonWeek.phase === 'preseason') return 'preseason';
-  if (seasonWeek.phase === 'regular_season') return 'regular_season';
-  return 'season_to_date';
+  return 'regular_season';
 };
 
 const prepareRecordSnapshots = (
@@ -41,39 +37,20 @@ const prepareRecordSnapshots = (
   seasonWeek: SeasonWeek,
   currentResult?: GameResult,
 ): GameRecordSnapshots | null => {
-  const sourceRecord = selectCurrentTeamRecord(competitor.records);
+  const sourceRecord = selectOverallTeamRecord(competitor.records);
   if (!sourceRecord) return null;
+
+  if (seasonWeek.phase === 'postseason') {
+    return buildRecordSnapshots(sourceRecord, 'regular_season');
+  }
 
   const pregameRecord = currentResult
     ? revertGameResult(sourceRecord, currentResult)
     : sourceRecord;
 
-  if (seasonWeek.phase !== 'postseason') {
-    return buildRecordSnapshots(
-      pregameRecord,
-      getRecordScope(seasonWeek),
-      currentResult,
-    );
-  }
-
-  const regularSeasonRecord = selectRegularSeasonTeamRecord(competitor.records);
-  if (regularSeasonRecord) {
-    const priorPostseasonResults = deriveAddedResults(
-      regularSeasonRecord,
-      pregameRecord,
-    );
-    if (priorPostseasonResults) {
-      return buildPostseasonRecordSnapshots(
-        regularSeasonRecord,
-        priorPostseasonResults,
-        currentResult,
-      );
-    }
-  }
-
   return buildRecordSnapshots(
     pregameRecord,
-    'season_to_date',
+    getRecordScope(seasonWeek),
     currentResult,
   );
 };

@@ -103,12 +103,12 @@ describe('GameCard records', () => {
     expect(screen.getByText('7-3-1')).not.toBeNull();
   });
 
-  it('shows cumulative postseason records before and after reveal', () => {
+  it('keeps regular-season playoff records unchanged after reveal', () => {
     render(
       <GameCard
         game={makeGame({
-          homeRecord: makeRecords([12, 6], [13, 6], 'season_to_date'),
-          awayRecord: makeRecords([12, 6], [12, 7], 'season_to_date'),
+          homeRecord: makeRecords([12, 6]),
+          awayRecord: makeRecords([12, 6]),
           seasonWeek: {
             season: 2026,
             phase: 'postseason',
@@ -122,8 +122,7 @@ describe('GameCard records', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Reveal Score' }));
 
-    expect(screen.getByText('13-6')).not.toBeNull();
-    expect(screen.getByText('12-7')).not.toBeNull();
+    expect(screen.getAllByText('12-6')).toHaveLength(2);
   });
 
   it('shows an unavailable marker instead of inventing a record', () => {
