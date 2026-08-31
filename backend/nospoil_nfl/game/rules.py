@@ -77,16 +77,27 @@ _RATING_STATE_TRANSITIONS: dict[RatingState, frozenset[RatingState]] = {
 
 
 def can_transition_game_state(
-    current: GameState,
+    current: GameStatus,
     target: GameState,
 ) -> bool:
     """Return whether normal sync work may apply a game-state observation."""
-    if not isinstance(current, GameState) or not isinstance(target, GameState):
+    if not isinstance(current, GameStatus):
         raise DomainValidationError(
-            "game-state transitions require canonical GameState values"
+            "game-state transitions require a canonical GameStatus"
+        )
+    if not isinstance(target, GameState):
+        raise DomainValidationError(
+            "game-state transitions require a canonical target GameState"
         )
 
-    return target in _GAME_STATE_TRANSITIONS[current]
+    if (
+        current.state is GameState.DELAYED
+        and not current.has_started
+        and target is GameState.POSTPONED
+    ):
+        return True
+
+    return target in _GAME_STATE_TRANSITIONS[current.state]
 
 
 def can_transition_rating_state(

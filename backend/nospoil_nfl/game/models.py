@@ -157,6 +157,11 @@ class GameStatus:
                     f"{self.state.value} status with a period requires a score"
                 )
 
+    @property
+    def has_started(self) -> bool:
+        """Return whether the canonical status shows that play began."""
+        return self.score is not None or self.state is GameState.IN_PROGRESS
+
 
 @dataclass(frozen=True, slots=True)
 class TeamRecord:
