@@ -17,7 +17,7 @@ from backend.nospoil_nfl.game import (
     SeasonWeek,
     TeamGameSnapshot,
 )
-from backend.nospoil_nfl.game.dynamodb_repository import _DynamoGameCodec
+from backend.nospoil_nfl.game.dynamodb_codec import _DynamoGameCodec
 from backend.nospoil_nfl.game.repository import GameRepositoryDataError
 
 
