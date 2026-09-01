@@ -2,7 +2,7 @@
 
 NoSpoil NFL helps you choose which NFL games to watch without showing the final score.
 
-Weekly games stay in schedule order. The **Best of Season** view sorts completed games by excitement score.
+Weekly games are intended to stay in schedule order, but the current frontend still groups them by status. The **Best of Season** view sorts completed games by excitement score.
 
 ## How it works
 
@@ -77,6 +77,13 @@ Before deployment:
 
 - `App.tsx`: page state and weekly or season views
 - `components/GameCard.tsx`: spoiler-safe game display
+- `utils/scheduleWeek.ts`: structured season-week labels and navigation
+- `services/espnWeekMapper.ts`: ESPN season-type translation
+- `utils/records.ts`: frontend pregame and postgame record calculations
 - `backend/main.py`: FastAPI endpoints and background game checks
 - `backend/nflfastr_fetcher.py`: play-by-play loading and cache access
-- `backend/excitement_calculator.py`: excitement score calculation
+- `backend/nospoil_nfl/rating/`: primary excitement score calculation
+- `backend/nospoil_nfl/game/`: canonical game models, rules, typed updates, and the new DynamoDB repository
+- `backend/excitement_calculator.py`: compatibility calculation wrapper for legacy scripts
+
+During the playoffs, the app shows regular-season records unchanged by score reveal. Cumulative playoff records remain planned for later design and implementation.
