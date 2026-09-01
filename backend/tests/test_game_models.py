@@ -24,6 +24,7 @@ from backend.nospoil_nfl.game import (
     TeamGameSnapshot,
     TeamRecord,
 )
+from backend.nospoil_nfl.game.repository import validate_rating_update
 
 
 CHECKED_AT = datetime(2026, 9, 10, 18, 0, tzinfo=UTC)
@@ -229,6 +230,41 @@ def test_final_game_accepts_a_confirmed_nflverse_rating() -> None:
     )
 
     assert game.rating.state is RatingState.CONFIRMED
+
+
+def test_rating_update_accepts_a_final_pending_game() -> None:
+    current = make_game(
+        status=GameStatus(
+            state=GameState.FINAL,
+            score=Score(home=24, away=17),
+        )
+    )
+
+    validate_rating_update(current, make_provisional_rating())
+
+
+def test_rating_update_rejects_a_non_final_game() -> None:
+    with pytest.raises(
+        DomainValidationError,
+        match="rating updates require a final game",
+    ):
+        validate_rating_update(make_game(), make_pending_rating())
+
+
+def test_rating_update_rejects_a_confirmed_to_provisional_transition() -> None:
+    current = make_game(
+        status=GameStatus(
+            state=GameState.FINAL,
+            score=Score(home=24, away=17),
+        ),
+        rating=make_confirmed_rating(),
+    )
+
+    with pytest.raises(
+        DomainValidationError,
+        match="rating update has an invalid rating transition",
+    ):
+        validate_rating_update(current, make_provisional_rating())
 
 
 def test_non_final_game_cannot_have_postgame_records() -> None:

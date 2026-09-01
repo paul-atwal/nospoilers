@@ -92,6 +92,25 @@ def make_game(
     )
 
 
+def make_final_game(game_id: str) -> Game:
+    return replace(
+        make_game(game_id),
+        status=GameStatus(GameState.FINAL, score=Score(home=24, away=17)),
+    )
+
+
+def make_provisional_rating(*, score: float = 6.5) -> GameRating:
+    return GameRating(
+        state=RatingState.PROVISIONAL,
+        retry=RatingRetry(),
+        score=score,
+        source=RatingSource.ESPN,
+        model_version="rating-v1",
+        input_hash="input-hash",
+        calculated_at=CHECKED_AT,
+    )
+
+
 def schedule_team(game_team: TeamGameSnapshot) -> TeamScheduleUpdate:
     return TeamScheduleUpdate(
         team_id=game_team.team_id,
@@ -682,6 +701,124 @@ def test_apply_schedule_clears_unsupplied_prepared_data_after_team_correction(
     assert stored.home.logo_key is None
     assert stored.home.pregame_record is None
     assert stored.home.postgame_record is None
+
+
+def test_apply_rating_replaces_only_the_rating_map(game_table: object) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = replace(
+        make_final_game("401000001"),
+        nflverse_id="2026_01_SEA_DET",
+        broadcaster="ESPN",
+        odds=OddsSnapshot("SEA -3.5", CHECKED_AT),
+    )
+    rating = make_provisional_rating()
+    assert repository.create_if_absent(current) is True
+
+    assert repository.apply_rating(current, rating) is WriteResult.APPLIED
+
+    stored = repository.get(current.game_id)
+    assert stored is not None
+    assert stored.rating == rating
+    assert replace(stored, rating=current.rating) == current
+
+
+def test_apply_rating_rejects_a_confirmed_to_provisional_replacement(
+    game_table: object,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    confirmed = replace(
+        make_final_game("401000001"),
+        rating=GameRating(
+            state=RatingState.CONFIRMED,
+            retry=RatingRetry(),
+            score=7.5,
+            source=RatingSource.NFLVERSE,
+            model_version="rating-v1",
+            input_hash="input-hash",
+            calculated_at=CHECKED_AT,
+            confirmed_at=CHECKED_AT,
+        ),
+    )
+    assert repository.create_if_absent(confirmed) is True
+
+    with pytest.raises(DomainValidationError, match="invalid rating transition"):
+        repository.apply_rating(confirmed, make_provisional_rating())
+
+    assert repository.get(confirmed.game_id) == confirmed
+
+
+def test_apply_rating_rejects_a_writer_that_lost_a_rating_race(
+    game_table: object,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = make_final_game("401000001")
+    winner = make_provisional_rating(score=7.5)
+    loser = make_provisional_rating(score=5.0)
+    assert repository.create_if_absent(current) is True
+
+    assert repository.apply_rating(current, winner) is WriteResult.APPLIED
+    assert repository.apply_rating(current, loser) is WriteResult.STALE
+
+    stored = repository.get(current.game_id)
+    assert stored is not None
+    assert stored.rating == winner
+
+
+def test_apply_rating_rejects_a_final_score_correction_after_the_read(
+    game_table: object,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = make_final_game("401000001")
+    assert repository.create_if_absent(current) is True
+
+    assert repository.apply_live_status(
+        current,
+        live_status_update(
+            current,
+            observed_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
+            status=GameStatus(GameState.FINAL, score=Score(home=24, away=20)),
+        ),
+    ) is WriteResult.APPLIED
+    assert repository.apply_rating(current, make_provisional_rating()) is WriteResult.STALE
+
+    stored = repository.get(current.game_id)
+    assert stored is not None
+    assert stored.status.score == Score(home=24, away=20)
+    assert stored.rating == current.rating
+
+
+def test_apply_rating_updates_pending_retry_metadata_only(game_table: object) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = make_final_game("401000001")
+    retry_rating = GameRating(
+        state=RatingState.PENDING,
+        retry=RatingRetry(
+            attempt_count=1,
+            next_attempt_at=datetime(2026, 9, 10, 19, 5, tzinfo=UTC),
+            last_error="source was not ready",
+        ),
+    )
+    assert repository.create_if_absent(current) is True
+
+    assert repository.apply_rating(current, retry_rating) is WriteResult.APPLIED
+
+    stored = repository.get(current.game_id)
+    assert stored is not None
+    assert stored.rating == retry_rating
+    assert replace(stored, rating=current.rating) == current
+
+
+def test_apply_rating_rejects_a_non_final_game_before_updating_it(
+    game_table: object,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = make_game("401000001")
+    assert repository.create_if_absent(current) is True
+
+    with pytest.raises(DomainValidationError, match="rating updates require a final game"):
+        repository.apply_rating(current, GameRating(RatingState.PENDING, RatingRetry()))
+
+    assert repository.get(current.game_id) == current
 
 
 def test_get_wraps_a_dynamodb_transport_failure() -> None:
