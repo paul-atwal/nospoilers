@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .models import Game, GameId, SeasonWeek
+from .models import (
+    DomainValidationError,
+    Game,
+    GameId,
+    GameRating,
+    GameState,
+    SeasonWeek,
+)
+from .rules import can_transition_rating_state
 from .updates import LiveStatusUpdate, ScheduleUpdate, WriteResult
 
 
@@ -14,6 +22,18 @@ class GameRepositoryError(RuntimeError):
 
 class GameRepositoryDataError(GameRepositoryError):
     """Raised when a stored item cannot become a valid game."""
+
+
+def validate_rating_update(current: Game, rating: GameRating) -> None:
+    """Validate one proposed rating replacement for its current game."""
+    if not isinstance(current, Game):
+        raise DomainValidationError("current must be a Game")
+    if not isinstance(rating, GameRating):
+        raise DomainValidationError("rating must be a GameRating")
+    if current.status.state is not GameState.FINAL:
+        raise DomainValidationError("rating updates require a final game")
+    if not can_transition_rating_state(current.rating.state, rating.state):
+        raise DomainValidationError("rating update has an invalid rating transition")
 
 
 class GameRepository(Protocol):
@@ -51,9 +71,14 @@ class GameRepository(Protocol):
         """Apply one live-status observation when the current item still matches."""
         ...
 
+    def apply_rating(self, current: Game, rating: GameRating) -> WriteResult:
+        """Apply one complete rating when the current item still matches."""
+        ...
+
 
 __all__ = [
     "GameRepository",
     "GameRepositoryDataError",
     "GameRepositoryError",
+    "validate_rating_update",
 ]

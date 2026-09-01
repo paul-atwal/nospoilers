@@ -30,7 +30,12 @@ from .models import (
     TeamGameSnapshot,
     TeamRecord,
 )
-from .repository import GameRepository, GameRepositoryDataError, GameRepositoryError
+from .repository import (
+    GameRepository,
+    GameRepositoryDataError,
+    GameRepositoryError,
+    validate_rating_update,
+)
 from .rules import can_transition_game_state
 from .updates import (
     LiveStatusUpdate,
@@ -616,6 +621,18 @@ class DynamoGameRepository(GameRepository):
             return WriteResult.STALE
         return WriteResult.APPLIED
 
+    def apply_rating(self, current: Game, rating: GameRating) -> WriteResult:
+        """Apply a complete rating without replacing non-rating game data."""
+        validate_rating_update(current, rating)
+        if rating == current.rating:
+            return WriteResult.STALE
+
+        try:
+            self._update_rating_item(current, rating)
+        except _StaleWrite:
+            return WriteResult.STALE
+        return WriteResult.APPLIED
+
     def _scheduled_game(self, current: Game, update: ScheduleUpdate) -> Game:
         """Build a complete game from a current game and schedule-owned fields."""
         return replace(
@@ -848,6 +865,35 @@ class DynamoGameRepository(GameRepository):
             raise GameRepositoryError("could not update game status in DynamoDB") from error
         except BotoCoreError as error:
             raise GameRepositoryError("could not update game status in DynamoDB") from error
+
+    def _update_rating_item(self, current: Game, rating: GameRating) -> None:
+        """Conditionally replace one rating map for an unchanged final game."""
+        current_item = self._codec.encode(current)
+        try:
+            self._table.update_item(
+                Key={"game_id": str(current.game_id)},
+                UpdateExpression="SET #rating = :rating",
+                ConditionExpression=(
+                    "attribute_exists(#game_id) AND #rating = :expected_rating "
+                    "AND #status = :expected_status"
+                ),
+                ExpressionAttributeNames={
+                    "#game_id": "game_id",
+                    "#rating": "rating",
+                    "#status": "status",
+                },
+                ExpressionAttributeValues={
+                    ":rating": _encode_rating(rating),
+                    ":expected_rating": current_item["rating"],
+                    ":expected_status": current_item["status"],
+                },
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                raise _StaleWrite from error
+            raise GameRepositoryError("could not update game rating in DynamoDB") from error
+        except BotoCoreError as error:
+            raise GameRepositoryError("could not update game rating in DynamoDB") from error
 
     def _query_all(
         self,
