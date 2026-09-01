@@ -362,7 +362,6 @@ class Game:
     espn_id: str
     nflverse_id: str | None
     season_week: SeasonWeek
-    schedule_order: int
     kickoff_at: datetime | None
     home: TeamGameSnapshot
     away: TeamGameSnapshot
@@ -381,7 +380,6 @@ class Game:
         _require_optional_text("nflverse_id", self.nflverse_id)
         if not isinstance(self.season_week, SeasonWeek):
             raise DomainValidationError("season_week must be a SeasonWeek")
-        _require_int("schedule_order", self.schedule_order, minimum=0)
         if not isinstance(self.home, TeamGameSnapshot):
             raise DomainValidationError("home must be a TeamGameSnapshot")
         if not isinstance(self.away, TeamGameSnapshot):

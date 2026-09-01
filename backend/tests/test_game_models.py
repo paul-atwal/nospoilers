@@ -97,7 +97,6 @@ def make_game(**overrides: Any) -> Game:
             phase=SeasonPhase.REGULAR_SEASON,
             week=1,
         ),
-        "schedule_order": 0,
         "kickoff_at": CHECKED_AT + timedelta(hours=1),
         "home": make_team("home"),
         "away": make_team("away"),

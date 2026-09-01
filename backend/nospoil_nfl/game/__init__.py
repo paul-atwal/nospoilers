@@ -26,6 +26,13 @@ from .rules import (
     derive_final_outcome,
     rating_input_for_outcome,
 )
+from .updates import (
+    LiveStatusUpdate,
+    ScheduleUpdate,
+    TeamScheduleUpdate,
+    UNSET,
+    WriteResult,
+)
 
 __all__ = [
     "DomainValidationError",
@@ -35,6 +42,7 @@ __all__ = [
     "GameRating",
     "GameState",
     "GameStatus",
+    "LiveStatusUpdate",
     "OddsSnapshot",
     "RatingRetry",
     "RatingSource",
@@ -42,10 +50,14 @@ __all__ = [
     "RecordScope",
     "RecordSnapshot",
     "Score",
+    "ScheduleUpdate",
     "SeasonPhase",
     "SeasonWeek",
     "TeamGameSnapshot",
+    "TeamScheduleUpdate",
     "TeamRecord",
+    "UNSET",
+    "WriteResult",
     "can_transition_game_state",
     "can_transition_rating_state",
     "derive_final_outcome",
