@@ -1,0 +1,98 @@
+{
+  "season": {"year": 2026, "type": 2},
+  "week": {"number": 1},
+  "events": [
+    {
+      "id": "401872656",
+      "date": "2026-09-10T00:20Z",
+      "competitions": [
+        {
+          "competitors": [
+            {
+              "homeAway": "home",
+              "team": {
+                "id": "26",
+                "displayName": "Seattle Seahawks",
+                "shortDisplayName": "Seahawks",
+                "abbreviation": "SEA"
+              },
+              "score": "0",
+              "records": [{"name": "overall", "type": "total", "summary": "0-0"}]
+            },
+            {
+              "homeAway": "away",
+              "team": {
+                "id": "17",
+                "displayName": "New England Patriots",
+                "shortDisplayName": "Patriots",
+                "abbreviation": "NE"
+              },
+              "score": "0",
+              "records": [{"name": "overall", "type": "total", "summary": "0-0"}]
+            }
+          ],
+          "broadcasts": [{"names": ["NBC"]}],
+          "odds": [{"details": "SEA -3.5"}]
+        }
+      ],
+      "status": {
+        "period": 0,
+        "displayClock": "0:00",
+        "type": {
+          "name": "STATUS_SCHEDULED",
+          "state": "pre",
+          "completed": false,
+          "description": "Scheduled",
+          "detail": "Thu, September 10th at 8:20 PM EDT",
+          "shortDetail": "9/10 - 8:20 PM EDT"
+        }
+      }
+    },
+    {
+      "id": "401872657",
+      "date": "2026-09-10T03:35Z",
+      "competitions": [
+        {
+          "competitors": [
+            {
+              "homeAway": "home",
+              "team": {
+                "id": "14",
+                "displayName": "Los Angeles Rams",
+                "shortDisplayName": "Rams",
+                "abbreviation": "LAR"
+              },
+              "score": "0",
+              "records": [{"name": "overall", "type": "total", "summary": "0-0"}]
+            },
+            {
+              "homeAway": "away",
+              "team": {
+                "id": "25",
+                "displayName": "San Francisco 49ers",
+                "shortDisplayName": "49ers",
+                "abbreviation": "SF"
+              },
+              "score": "0",
+              "records": [{"name": "overall", "type": "total", "summary": "0-0"}]
+            }
+          ],
+          "broadcasts": [{"names": ["Netflix"]}],
+          "odds": []
+        }
+      ],
+      "status": {
+        "period": 0,
+        "displayClock": "0:00",
+        "type": {
+          "name": "STATUS_SCHEDULED",
+          "state": "pre",
+          "completed": false,
+          "description": "Scheduled",
+          "detail": "Thu, September 10th at 11:35 PM EDT",
+          "shortDetail": "9/10 - 11:35 PM EDT"
+        }
+      }
+    }
+  ]
+}
