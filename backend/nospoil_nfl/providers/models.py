@@ -11,11 +11,12 @@ from typing import NewType
 from ..game.models import (
     DomainValidationError,
     GameId,
+    GameState,
     GameStatus,
     OddsSnapshot,
+    RecordSnapshot,
     Score,
     SeasonWeek,
-    TeamRecord,
 )
 
 
@@ -61,19 +62,19 @@ def _require_probability(name: str, value: object) -> None:
 
 @dataclass(frozen=True, slots=True)
 class ScheduleTeam:
-    """Normalized team fields and an optional source record."""
+    """Normalized team fields and an optional scoped source record."""
 
     team_id: str
     display_name: str
     abbreviation: str
-    record: TeamRecord | None = None
+    record: RecordSnapshot | None = None
 
     def __post_init__(self) -> None:
         _require_text("team_id", self.team_id)
         _require_text("display_name", self.display_name)
         _require_text("abbreviation", self.abbreviation)
-        if self.record is not None and not isinstance(self.record, TeamRecord):
-            raise DomainValidationError("record must be a TeamRecord")
+        if self.record is not None and not isinstance(self.record, RecordSnapshot):
+            raise DomainValidationError("record must be a RecordSnapshot")
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +101,13 @@ class ScheduleGame:
             raise DomainValidationError("home and away teams must be different")
         if not isinstance(self.status, GameStatus):
             raise DomainValidationError("status must be a GameStatus")
+        if self.kickoff_at is None and self.status.state not in {
+            GameState.POSTPONED,
+            GameState.CANCELLED,
+        }:
+            raise DomainValidationError(
+                f"{self.status.state.value} game requires kickoff_at"
+            )
         _require_optional_text("broadcaster", self.broadcaster)
         if self.odds is not None and not isinstance(self.odds, OddsSnapshot):
             raise DomainValidationError("odds must be an OddsSnapshot")
@@ -247,6 +255,14 @@ class NflversePlaySeason:
         if any(not isinstance(play, NflversePlay) for play in self.plays):
             raise DomainValidationError(
                 "nflverse plays must contain NflversePlay values"
+            )
+        play_keys = [
+            (play.nflverse_game_id, play.play_number)
+            for play in self.plays
+        ]
+        if len(play_keys) != len(set(play_keys)):
+            raise DomainValidationError(
+                "nflverse play game IDs and play numbers must be unique"
             )
 
 
