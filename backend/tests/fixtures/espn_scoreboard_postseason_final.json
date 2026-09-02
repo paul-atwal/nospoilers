@@ -1,0 +1,52 @@
+{
+  "season": {"year": 2025, "type": 3},
+  "week": {"number": 1},
+  "events": [
+    {
+      "id": "401772979",
+      "date": "2026-01-10T21:30Z",
+      "competitions": [
+        {
+          "competitors": [
+            {
+              "homeAway": "home",
+              "team": {
+                "id": "29",
+                "displayName": "Green Bay Packers",
+                "shortDisplayName": "Packers",
+                "abbreviation": "GB"
+              },
+              "score": "31",
+              "records": [{"name": "overall", "type": "total", "summary": "8-9"}]
+            },
+            {
+              "homeAway": "away",
+              "team": {
+                "id": "14",
+                "displayName": "Los Angeles Rams",
+                "shortDisplayName": "Rams",
+                "abbreviation": "LAR"
+              },
+              "score": "34",
+              "records": [{"name": "overall", "type": "total", "summary": "12-5"}]
+            }
+          ],
+          "broadcasts": [{"names": ["FOX"]}],
+          "odds": [{"details": null}]
+        }
+      ],
+      "status": {
+        "period": 4,
+        "displayClock": "0:00",
+        "type": {
+          "name": "STATUS_FINAL",
+          "state": "post",
+          "completed": true,
+          "description": "Final",
+          "detail": "Final",
+          "shortDetail": "Final"
+        }
+      }
+    }
+  ]
+}
