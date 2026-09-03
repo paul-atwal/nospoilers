@@ -17,3 +17,10 @@ These are representative rows from the official 2025 nflverse play-by-play CSV r
 - `nflverse_pbp_overtime.json`: 2025 Week 12, Giants at Lions, nflverse game `2025_12_NYG_DET`.
 
 The tests load these JSON rows into pandas and never call nflverse.
+
+## nflverse schedules
+
+`nflverse_schedule.json` is a small source-shaped schedule fixture. It keeps
+one preseason row, two completed regular-season rows, and one postseason row
+so provider tests can verify phase mapping, identifier preservation, nullable
+scores, and complete-season loading without calling nflverse.

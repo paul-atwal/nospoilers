@@ -14,6 +14,11 @@ from .errors import (
 )
 from .espn_scoreboard import ESPN_SCOREBOARD_URL, EspnScoreboardClient
 from .espn_summary import ESPN_GAME_SUMMARY_URL, EspnGameSummaryClient
+from .nflverse_schedule import (
+    NflverseScheduleClient,
+    NflverseScheduleLoader,
+    REQUIRED_SCHEDULE_COLUMNS,
+)
 from .models import (
     GameSummary,
     NflverseGameId,
@@ -37,6 +42,8 @@ __all__ = [
     "NFLVersePlayProvider",
     "NFLVerseScheduleProvider",
     "NflverseGameId",
+    "NflverseScheduleClient",
+    "NflverseScheduleLoader",
     "NflversePlay",
     "NflversePlaySeason",
     "NflverseScheduleGame",
@@ -45,6 +52,7 @@ __all__ = [
     "ProviderError",
     "ProviderTransportError",
     "ProviderUnavailableError",
+    "REQUIRED_SCHEDULE_COLUMNS",
     "ScheduleGame",
     "ScheduleTeam",
     "ScoreboardBatch",
