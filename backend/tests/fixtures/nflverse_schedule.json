@@ -1,0 +1,38 @@
+[
+  {
+    "season": 2025,
+    "game_type": "PRE",
+    "week": 1,
+    "game_id": "2025_01_HOF_DAL",
+    "espn": null,
+    "home_score": null,
+    "away_score": null
+  },
+  {
+    "season": 2025,
+    "game_type": "REG",
+    "week": 3,
+    "game_id": "2025_03_NYJ_TB",
+    "espn": "401772840",
+    "home_score": 29,
+    "away_score": 27
+  },
+  {
+    "season": 2025,
+    "game_type": "REG",
+    "week": 12,
+    "game_id": "2025_12_NYG_DET",
+    "espn": "401772888",
+    "home_score": 34,
+    "away_score": 27
+  },
+  {
+    "season": 2025,
+    "game_type": "WC",
+    "week": 19,
+    "game_id": "2025_19_BUF_KC",
+    "espn": null,
+    "home_score": null,
+    "away_score": null
+  }
+]
