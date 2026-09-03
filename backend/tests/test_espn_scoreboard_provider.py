@@ -66,10 +66,14 @@ def test_fetches_one_response_and_normalizes_all_events(
         "401872657",
     ]
     assert result.games[0].home.abbreviation == "SEA"
+    assert result.games[0].home.logo_key == "26"
     assert result.games[0].away.abbreviation == "NE"
     assert result.games[0].broadcaster == "NBC"
     assert result.games[0].odds is not None
     assert result.games[0].odds.details == "SEA -3.5"
+    assert result.known_weeks[0] == SeasonWeek(2026, SeasonPhase.PRESEASON, 1)
+    assert result.known_weeks[-1] == SeasonWeek(2026, SeasonPhase.POSTSEASON, 5)
+    assert len(result.known_weeks) == 27
     request.assert_called_once_with(
         f"{ESPN_SCOREBOARD_URL}?dates=2026&week=1&seasontype=2&limit=100",
         timeout=10.0,
@@ -226,6 +230,39 @@ def test_changed_event_date_is_returned_as_the_latest_kickoff(
     game = EspnScoreboardClient(clock=lambda: OBSERVED_AT).fetch_scoreboard().games[0]
 
     assert game.kickoff_at == datetime(2026, 9, 11, 0, 20, tzinfo=UTC)
+
+
+def test_postponed_event_can_have_unknown_kickoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = load_fixture("espn_scoreboard_scheduled.json")
+    event = payload["events"][0]
+    event["date"] = None
+    event["status"]["type"] = {
+        "name": "STATUS_POSTPONED",
+        "state": "pre",
+        "completed": False,
+        "description": "Postponed",
+        "detail": "Postponed",
+        "shortDetail": "Postponed",
+    }
+    make_client(monkeypatch, payload)
+
+    game = EspnScoreboardClient(clock=lambda: OBSERVED_AT).fetch_scoreboard().games[0]
+
+    assert game.status.state is GameState.POSTPONED
+    assert game.kickoff_at is None
+
+
+def test_rejects_calendar_metadata_for_a_different_season(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = load_fixture("espn_scoreboard_scheduled.json")
+    payload["leagues"][0]["season"]["year"] = 2025
+    make_client(monkeypatch, payload)
+
+    with pytest.raises(ProviderDataError, match="league season does not match"):
+        EspnScoreboardClient(clock=lambda: OBSERVED_AT).fetch_scoreboard()
 
 
 def test_invalid_required_event_field_is_provider_data_error(
