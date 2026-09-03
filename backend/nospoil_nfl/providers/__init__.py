@@ -19,6 +19,11 @@ from .nflverse_schedule import (
     NflverseScheduleLoader,
     REQUIRED_SCHEDULE_COLUMNS,
 )
+from .nflverse_play import (
+    NflversePlayClient,
+    NflversePlayLoader,
+    REQUIRED_PBP_COLUMNS,
+)
 from .models import (
     GameSummary,
     NflverseGameId,
@@ -42,6 +47,8 @@ __all__ = [
     "NFLVersePlayProvider",
     "NFLVerseScheduleProvider",
     "NflverseGameId",
+    "NflversePlayClient",
+    "NflversePlayLoader",
     "NflverseScheduleClient",
     "NflverseScheduleLoader",
     "NflversePlay",
@@ -52,6 +59,7 @@ __all__ = [
     "ProviderError",
     "ProviderTransportError",
     "ProviderUnavailableError",
+    "REQUIRED_PBP_COLUMNS",
     "REQUIRED_SCHEDULE_COLUMNS",
     "ScheduleGame",
     "ScheduleTeam",

@@ -24,3 +24,11 @@ The tests load these JSON rows into pandas and never call nflverse.
 one preseason row, two completed regular-season rows, and one postseason row
 so provider tests can verify phase mapping, identifier preservation, nullable
 scores, and complete-season loading without calling nflverse.
+
+## nflverse play provider
+
+`nflverse_play_provider.json` is a small source-shaped PBP fixture using the
+representative 2025 Jets-Buccaneers and Giants-Lions game IDs. It includes
+multiple play IDs, a null observation, and an overtime period so provider
+tests can verify source-order preservation and nullable field mapping without
+calling nflverse.

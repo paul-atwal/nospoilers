@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 import math
 from numbers import Integral, Real
-from threading import Lock
 from typing import Any
 
 from ..game.models import (
@@ -19,6 +18,7 @@ from .errors import (
     ProviderError,
     ProviderTransportError,
 )
+from ._nflreadpy import load_nflreadpy
 from .models import (
     NflverseGameId,
     NflverseScheduleGame,
@@ -46,7 +46,6 @@ _GAME_PHASES = {
     "CON": SeasonPhase.POSTSEASON,
     "SB": SeasonPhase.POSTSEASON,
 }
-_NFLREADPY_CONFIG_LOCK = Lock()
 
 
 class NflverseScheduleClient:
@@ -93,25 +92,12 @@ class NflverseScheduleClient:
             raise _data_error(str(exc)) from exc
 
     def _default_loader(self, seasons: list[int]) -> object:
-        try:
-            import nflreadpy as nfl
-            from nflreadpy.config import get_config, update_config
-
-            with _NFLREADPY_CONFIG_LOCK:
-                previous_timeout = get_config().timeout
-                update_config(timeout=max(1, math.ceil(self._timeout_seconds)))
-                try:
-                    return nfl.load_schedules(seasons)
-                finally:
-                    update_config(timeout=previous_timeout)
-        except ProviderError:
-            raise
-        except Exception as exc:
-            raise ProviderTransportError(
-                "nflreadpy schedule download failed",
-                provider="nflverse",
-                operation="schedule",
-            ) from exc
+        return load_nflreadpy(
+            "load_schedules",
+            seasons,
+            timeout_seconds=self._timeout_seconds,
+            operation="schedule",
+        )
 
 
 def _rows(table: object) -> list[Mapping[str, Any]]:
