@@ -47,7 +47,7 @@ def load_fixture() -> list[dict[str, Any]]:
 def make_table(rows: list[dict[str, Any]] | None = None) -> PolarsLikeTable:
     return PolarsLikeTable(
         rows=load_fixture() if rows is None else rows,
-        columns=REQUIRED_COLUMNS,
+        columns=REQUIRED_COLUMNS.copy(),
     )
 
 
