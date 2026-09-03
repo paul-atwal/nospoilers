@@ -1,0 +1,20 @@
+[
+  {
+    "season": 2025,
+    "game_type": "REG",
+    "week": 3,
+    "game_id": "2025_03_NYJ_TB",
+    "espn": "401772840",
+    "home_score": 29,
+    "away_score": 27
+  },
+  {
+    "season": 2025,
+    "game_type": "REG",
+    "week": 12,
+    "game_id": "2025_12_NYG_DET",
+    "espn": "401772888",
+    "home_score": 34,
+    "away_score": 27
+  }
+]
