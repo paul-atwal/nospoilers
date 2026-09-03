@@ -13,6 +13,7 @@ from .errors import (
     ProviderUnavailableError,
 )
 from .espn_scoreboard import ESPN_SCOREBOARD_URL, EspnScoreboardClient
+from .espn_summary import ESPN_GAME_SUMMARY_URL, EspnGameSummaryClient
 from .models import (
     GameSummary,
     NflverseGameId,
@@ -27,8 +28,10 @@ from .models import (
 
 __all__ = [
     "ESPNGameSummaryProvider",
+    "ESPN_GAME_SUMMARY_URL",
     "ESPN_SCOREBOARD_URL",
     "ESPNScoreboardProvider",
+    "EspnGameSummaryClient",
     "EspnScoreboardClient",
     "GameSummary",
     "NFLVersePlayProvider",
