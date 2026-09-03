@@ -1,0 +1,78 @@
+{
+  "season": {
+    "year": 2022,
+    "type": 2
+  },
+  "week": {
+    "number": 17
+  },
+  "events": [
+    {
+      "id": "401437947",
+      "date": "2023-01-03T01:30Z",
+      "season": {
+        "year": 2022,
+        "type": 2
+      },
+      "week": {
+        "number": 17
+      },
+      "status": {
+        "clock": 372,
+        "displayClock": "6:12",
+        "period": 1,
+        "type": {
+          "id": "5",
+          "name": "STATUS_CANCELED",
+          "state": "post",
+          "completed": false,
+          "description": "Canceled",
+          "detail": "Canceled",
+          "shortDetail": "Canceled"
+        }
+      },
+      "competitions": [
+        {
+          "competitors": [
+            {
+              "id": "4",
+              "homeAway": "home",
+              "team": {
+                "id": "4",
+                "displayName": "Cincinnati Bengals",
+                "abbreviation": "CIN"
+              },
+              "score": "0",
+              "records": [
+                {
+                  "name": "overall",
+                  "type": "total",
+                  "summary": "12-4"
+                }
+              ]
+            },
+            {
+              "id": "2",
+              "homeAway": "away",
+              "team": {
+                "id": "2",
+                "displayName": "Buffalo Bills",
+                "abbreviation": "BUF"
+              },
+              "score": "0",
+              "records": [
+                {
+                  "name": "overall",
+                  "type": "total",
+                  "summary": "13-3"
+                }
+              ]
+            }
+          ],
+          "broadcasts": [],
+          "odds": []
+        }
+      ]
+    }
+  ]
+}

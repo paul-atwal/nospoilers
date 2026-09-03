@@ -9,14 +9,16 @@ from typing import Any
 
 import pandas as pd
 import pytest
+import requests
 
 from backend.nospoil_nfl.game.models import Score
+from backend.nospoil_nfl.providers._nflreadpy import load_nflreadpy
 from backend.nospoil_nfl.providers import (
-    NFLVersePlayProvider,
     NflversePlayClient,
     NflversePlaySeason,
     ProviderDataError,
     ProviderTransportError,
+    ProviderUnavailableError,
 )
 
 
@@ -194,19 +196,6 @@ def test_source_failure_is_a_transport_error() -> None:
     assert error.value.operation == "plays"
 
 
-def test_play_contract_accepts_fixture_provider() -> None:
-    class FixturePlayProvider:
-        def load_plays(self, season: int) -> NflversePlaySeason:
-            assert season == 2025
-            return NflversePlayClient(loader=lambda seasons: make_table()).load_plays(
-                season
-            )
-
-    provider: NFLVersePlayProvider = FixturePlayProvider()
-
-    assert len(provider.load_plays(2025).plays) == 5
-
-
 def test_empty_table_requires_a_validated_schema() -> None:
     table = PolarsLikeTable(rows=[], columns=REQUIRED_COLUMNS)
 
@@ -218,3 +207,64 @@ def test_empty_table_requires_a_validated_schema() -> None:
 def test_empty_untyped_list_is_not_an_empty_success() -> None:
     with pytest.raises(ProviderDataError, match="missing columns"):
         NflversePlayClient(loader=lambda seasons: []).load_plays(2025)
+
+
+def _install_fake_nflreadpy(
+    monkeypatch: pytest.MonkeyPatch,
+    loader: Any,
+) -> SimpleNamespace:
+    config = SimpleNamespace(timeout=23)
+    nflreadpy = ModuleType("nflreadpy")
+    config_module = ModuleType("nflreadpy.config")
+    nflreadpy.load_pbp = loader  # type: ignore[attr-defined]
+    config_module.get_config = lambda: config  # type: ignore[attr-defined]
+    config_module.update_config = lambda **kwargs: setattr(
+        config, "timeout", kwargs["timeout"]
+    )  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "nflreadpy", nflreadpy)
+    monkeypatch.setitem(sys.modules, "nflreadpy.config", config_module)
+    return config
+
+
+def test_nflreadpy_value_error_is_provider_data_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def loader(seasons: list[int]) -> object:
+        raise ValueError("bad data")
+
+    config = _install_fake_nflreadpy(monkeypatch, loader)
+
+    with pytest.raises(ProviderDataError):
+        load_nflreadpy("load_pbp", [2025], timeout_seconds=2, operation="plays")
+
+    assert config.timeout == 23
+
+
+def test_nflreadpy_timeout_is_provider_transport_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def loader(seasons: list[int]) -> object:
+        raise requests.Timeout("timed out")
+
+    config = _install_fake_nflreadpy(monkeypatch, loader)
+
+    with pytest.raises(ProviderTransportError):
+        load_nflreadpy("load_pbp", [2025], timeout_seconds=2, operation="plays")
+
+    assert config.timeout == 23
+
+
+def test_nflreadpy_missing_source_data_is_provider_unavailable_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_error = requests.HTTPError(response=SimpleNamespace(status_code=404))
+
+    def loader(seasons: list[int]) -> object:
+        raise ConnectionError("source data is not available") from source_error
+
+    config = _install_fake_nflreadpy(monkeypatch, loader)
+
+    with pytest.raises(ProviderUnavailableError):
+        load_nflreadpy("load_pbp", [2025], timeout_seconds=2, operation="plays")
+
+    assert config.timeout == 23

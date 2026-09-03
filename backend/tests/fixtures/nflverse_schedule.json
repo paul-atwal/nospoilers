@@ -1,38 +1,38 @@
 [
   {
-    "season": 2025,
-    "game_type": "PRE",
-    "week": 1,
-    "game_id": "2025_01_HOF_DAL",
-    "espn": null,
-    "home_score": null,
-    "away_score": null
-  },
-  {
-    "season": 2025,
-    "game_type": "REG",
-    "week": 3,
-    "game_id": "2025_03_NYJ_TB",
-    "espn": "401772840",
-    "home_score": 29,
-    "away_score": 27
-  },
-  {
-    "season": 2025,
-    "game_type": "REG",
-    "week": 12,
-    "game_id": "2025_12_NYG_DET",
-    "espn": "401772888",
-    "home_score": 34,
-    "away_score": 27
-  },
-  {
-    "season": 2025,
+    "season": 2024,
     "game_type": "WC",
     "week": 19,
-    "game_id": "2025_19_BUF_KC",
-    "espn": null,
-    "home_score": null,
-    "away_score": null
+    "game_id": "2024_19_LAC_HOU",
+    "espn": "401671878",
+    "home_score": 32,
+    "away_score": 12
+  },
+  {
+    "season": 2024,
+    "game_type": "DIV",
+    "week": 20,
+    "game_id": "2024_20_HOU_KC",
+    "espn": "401671884",
+    "home_score": 23,
+    "away_score": 14
+  },
+  {
+    "season": 2024,
+    "game_type": "CON",
+    "week": 21,
+    "game_id": "2024_21_WAS_PHI",
+    "espn": "401671888",
+    "home_score": 55,
+    "away_score": 23
+  },
+  {
+    "season": 2024,
+    "game_type": "SB",
+    "week": 22,
+    "game_id": "2024_22_KC_PHI",
+    "espn": "401671889",
+    "home_score": 40,
+    "away_score": 22
   }
 ]

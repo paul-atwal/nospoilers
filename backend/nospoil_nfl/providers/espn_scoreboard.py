@@ -355,6 +355,9 @@ def _normalize_status(status: object, raw_scores: Mapping[str, object]) -> GameS
         or name == "STATUS_END"
     )
 
+    if is_cancelled:
+        return GameStatus(GameState.CANCELLED, detail=detail)
+
     period = _optional_nonnegative_int(source_status.get("period"), "status.period")
     clock = source_status.get("displayClock")
     if clock is not None and not isinstance(clock, str):
@@ -364,8 +367,6 @@ def _normalize_status(status: object, raw_scores: Mapping[str, object]) -> GameS
     if state == "pre":
         if completed:
             raise _data_error("pregame ESPN status cannot be completed")
-        if is_cancelled:
-            return GameStatus(GameState.CANCELLED, detail=detail)
         if is_postponed:
             return GameStatus(GameState.POSTPONED, detail=detail)
         if is_delayed:
@@ -377,7 +378,7 @@ def _normalize_status(status: object, raw_scores: Mapping[str, object]) -> GameS
         return GameStatus(GameState.SCHEDULED, detail=detail)
 
     if state == "in":
-        if completed or is_cancelled or is_postponed or is_scheduled or is_finished:
+        if completed or is_postponed or is_scheduled or is_finished:
             raise _data_error(f"contradictory in-game ESPN status: {name}")
         if period is None or period < 1:
             raise _data_error("in-game ESPN status requires a positive period")
@@ -408,17 +409,6 @@ def _normalize_status(status: object, raw_scores: Mapping[str, object]) -> GameS
         return GameStatus(GameState.POSTPONED, detail=detail)
     if is_delayed or is_scheduled or is_started:
         raise _data_error(f"contradictory postgame ESPN status: {name}")
-    if is_cancelled:
-        score = None
-        if raw_scores.get("home") is not None and raw_scores.get("away") is not None:
-            score = _normalize_started_score(raw_scores)
-        return GameStatus(
-            GameState.CANCELLED,
-            detail=detail,
-            period=period if score is not None else None,
-            clock=clock if score is not None else None,
-            score=score,
-        )
     if not completed:
         raise _data_error(f"postgame ESPN status is not completed: {name}")
     if not is_finished:
