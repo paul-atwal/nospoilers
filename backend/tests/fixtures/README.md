@@ -27,6 +27,11 @@ source weeks so provider tests can verify canonical phase-local week mapping,
 identifier preservation, scores, and complete-season loading without calling
 nflverse.
 
+`nflverse_schedule_regular.json` keeps the matching source schedule rows for
+the two representative 2025 regular-season PBP games. Together with
+`nflverse_play_provider.json`, it verifies the ESPN event ID to nflverse
+`game_id` mapping and local play selection without a source call.
+
 ## ESPN scoreboard
 
 `espn_scoreboard_cancelled.json` is a trimmed response for the cancelled
