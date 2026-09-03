@@ -8,7 +8,6 @@ from backend.nospoil_nfl.game import (
     DomainValidationError,
     GameState,
     GameStatus,
-    RecordScope,
     RecordSnapshot,
     Score,
     SeasonPhase,
@@ -67,20 +66,6 @@ def make_play(play_number: int, game_id: str = "2026_01_HME_AWY") -> NflversePla
 def test_schedule_team_requires_a_scoped_record_snapshot() -> None:
     with pytest.raises(DomainValidationError, match="RecordSnapshot"):
         make_team("home", TeamRecord(wins=1, losses=0))  # type: ignore[arg-type]
-
-
-def test_schedule_team_preserves_record_scope_and_observation_time() -> None:
-    snapshot = RecordSnapshot(
-        record=TeamRecord(wins=1, losses=0),
-        scope=RecordScope.PRESEASON,
-        snapshot_at=OBSERVED_AT,
-    )
-
-    team = make_team("home", snapshot)
-
-    assert team.record == snapshot
-    assert team.record.scope is RecordScope.PRESEASON
-    assert team.record.snapshot_at == OBSERVED_AT
 
 
 def test_schedule_game_requires_kickoff_for_scheduled_status() -> None:

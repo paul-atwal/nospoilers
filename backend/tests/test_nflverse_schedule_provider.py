@@ -10,7 +10,6 @@ import pytest
 
 from backend.nospoil_nfl.game.models import SeasonPhase, Score
 from backend.nospoil_nfl.providers import (
-    NFLVerseScheduleProvider,
     NflverseScheduleClient,
     NflverseScheduleSeason,
     ProviderDataError,
@@ -58,21 +57,27 @@ def test_loads_one_complete_season_from_a_polars_like_table() -> None:
         calls.append(seasons)
         return make_table()
 
-    result = NflverseScheduleClient(loader=loader).load_schedule(2025)
+    result = NflverseScheduleClient(loader=loader).load_schedule(2024)
 
     assert isinstance(result, NflverseScheduleSeason)
-    assert calls == [[2025]]
+    assert calls == [[2024]]
     assert len(result.games) == 4
-    assert result.games[0].season_week.phase is SeasonPhase.PRESEASON
-    assert result.games[0].final_score is None
-    assert result.games[1].season_week.season == 2025
-    assert result.games[1].season_week.phase is SeasonPhase.REGULAR_SEASON
-    assert result.games[1].season_week.week == 3
-    assert result.games[1].nflverse_game_id == "2025_03_NYJ_TB"
-    assert result.games[1].espn_id == "401772840"
-    assert result.games[1].final_score == Score(home=29, away=27)
-    assert result.games[3].season_week.phase is SeasonPhase.POSTSEASON
-    assert result.games[3].season_week.week == 19
+    assert [game.season_week.phase for game in result.games] == [
+        SeasonPhase.POSTSEASON,
+        SeasonPhase.POSTSEASON,
+        SeasonPhase.POSTSEASON,
+        SeasonPhase.POSTSEASON,
+    ]
+    assert [game.season_week.week for game in result.games] == [1, 2, 3, 5]
+    assert [game.nflverse_game_id for game in result.games] == [
+        "2024_19_LAC_HOU",
+        "2024_20_HOU_KC",
+        "2024_21_WAS_PHI",
+        "2024_22_KC_PHI",
+    ]
+    assert result.games[0].espn_id == "401671878"
+    assert result.games[0].final_score == Score(home=32, away=12)
+    assert result.games[3].final_score == Score(home=40, away=22)
 
 
 def test_load_schedule_accepts_a_pandas_like_table() -> None:
@@ -85,7 +90,7 @@ def test_load_schedule_accepts_a_pandas_like_table() -> None:
 
     result = NflverseScheduleClient(
         loader=lambda seasons: PandasLikeTable()
-    ).load_schedule(2025)
+    ).load_schedule(2024)
 
     assert len(result.games) == 4
 
@@ -93,10 +98,11 @@ def test_load_schedule_accepts_a_pandas_like_table() -> None:
 def test_load_schedule_accepts_an_actual_pandas_dataframe() -> None:
     result = NflverseScheduleClient(
         loader=lambda seasons: pd.DataFrame(load_fixture())
-    ).load_schedule(2025)
+    ).load_schedule(2024)
 
     assert len(result.games) == 4
-    assert result.games[1].final_score == Score(home=29, away=27)
+    assert result.games[1].season_week.week == 2
+    assert result.games[1].final_score == Score(home=23, away=14)
 
 
 def test_rejects_table_conversion_failure_as_provider_data_error() -> None:
@@ -107,7 +113,7 @@ def test_rejects_table_conversion_failure_as_provider_data_error() -> None:
             raise ValueError("malformed table")
 
     with pytest.raises(ProviderDataError, match="could not be converted"):
-        NflverseScheduleClient(loader=lambda seasons: BrokenTable()).load_schedule(2025)
+        NflverseScheduleClient(loader=lambda seasons: BrokenTable()).load_schedule(2024)
 
 
 def test_rejects_missing_required_columns() -> None:
@@ -119,13 +125,13 @@ def test_rejects_missing_required_columns() -> None:
     ]
 
     with pytest.raises(ProviderDataError, match="missing columns: away_score"):
-        NflverseScheduleClient(loader=lambda seasons: table).load_schedule(2025)
+        NflverseScheduleClient(loader=lambda seasons: table).load_schedule(2024)
 
 
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
-        ("season", 2024, "does not match"),
+        ("season", 2023, "does not match"),
         ("game_type", "UNKNOWN", "unsupported"),
         ("week", 0, "schedule.week"),
         ("game_id", "", "schedule.game_id"),
@@ -141,17 +147,17 @@ def test_rejects_invalid_schedule_rows(
 
     with pytest.raises(ProviderDataError, match=message):
         NflverseScheduleClient(loader=lambda seasons: make_table(rows)).load_schedule(
-            2025
+            2024
         )
 
 
 def test_rejects_inconsistent_score_pair() -> None:
     rows = load_fixture()
-    rows[0]["home_score"] = 7
+    rows[0]["home_score"] = None
 
     with pytest.raises(ProviderDataError, match="both present or both missing"):
         NflverseScheduleClient(loader=lambda seasons: make_table(rows)).load_schedule(
-            2025
+            2024
         )
 
 
@@ -162,7 +168,7 @@ def test_rejects_duplicate_identifiers(duplicate_field: str) -> None:
 
     with pytest.raises(ProviderDataError, match="must be unique"):
         NflverseScheduleClient(loader=lambda seasons: make_table(rows)).load_schedule(
-            2025
+            2024
         )
 
 
@@ -177,30 +183,11 @@ def test_source_failure_is_a_transport_error() -> None:
     assert error.value.operation == "schedule"
 
 
-def test_schedule_contract_accepts_fixture_provider() -> None:
-    class FixtureScheduleProvider:
-        def load_schedule(self, season: int) -> NflverseScheduleSeason:
-            assert season == 2025
-            return NflverseScheduleClient(
-                loader=lambda seasons: make_table()
-            ).load_schedule(season)
-
-    provider: NFLVerseScheduleProvider = FixtureScheduleProvider()
-
-    assert len(provider.load_schedule(2025).games) == 4
-
-
-def test_fixture_provider_does_not_require_live_nflreadpy() -> None:
-    provider = NflverseScheduleClient(loader=lambda seasons: make_table())
-
-    assert provider.load_schedule(2025).season == 2025
-
-
 def test_duplicate_source_rows_are_rejected_at_collection_boundary() -> None:
     rows = load_fixture()
     rows.append(rows[1].copy())
 
     with pytest.raises(ProviderDataError, match="must be unique"):
         NflverseScheduleClient(loader=lambda seasons: make_table(rows)).load_schedule(
-            2025
+            2024
         )

@@ -21,9 +21,18 @@ The tests load these JSON rows into pandas and never call nflverse.
 ## nflverse schedules
 
 `nflverse_schedule.json` is a small source-shaped schedule fixture. It keeps
-one preseason row, two completed regular-season rows, and one postseason row
-so provider tests can verify phase mapping, identifier preservation, nullable
-scores, and complete-season loading without calling nflverse.
+four completed 2024 postseason rows from the nflverse schedule release. The
+rows cover Wild Card, Divisional, Conference Championship, and Super Bowl
+source weeks so provider tests can verify canonical phase-local week mapping,
+identifier preservation, scores, and complete-season loading without calling
+nflverse.
+
+## ESPN scoreboard
+
+`espn_scoreboard_cancelled.json` is a trimmed response for the cancelled
+2022 regular-season Week 17 Bills-Bengals event, `401437947`. It preserves
+ESPN's placeholder period, clock, and 0-0 competitor scores so the provider
+test verifies that cancelled games do not expose them as a result.
 
 ## nflverse play provider
 

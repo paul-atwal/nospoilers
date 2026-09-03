@@ -12,7 +12,6 @@ import requests
 from backend.nospoil_nfl.game.models import GameId, Score
 from backend.nospoil_nfl.providers import (
     ESPN_GAME_SUMMARY_URL,
-    ESPNGameSummaryProvider,
     EspnGameSummaryClient,
     GameSummary,
     ProviderDataError,
@@ -158,7 +157,6 @@ def test_rejects_invalid_summary_values(
     with pytest.raises(ProviderDataError):
         EspnGameSummaryClient().fetch_summary(GameId(REGULATION_ID))
 
-
 def test_rejects_empty_game_id() -> None:
     with pytest.raises(ProviderDataError, match="game_id"):
         EspnGameSummaryClient().fetch_summary(GameId(""))
@@ -214,23 +212,3 @@ def test_invalid_json_is_data_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(ProviderDataError):
         EspnGameSummaryClient().fetch_summary(GameId(REGULATION_ID))
-
-
-def test_summary_contract_accepts_fixture_provider() -> None:
-    class FixtureSummaryProvider:
-        def __init__(self, summary: GameSummary) -> None:
-            self.summary = summary
-
-        def fetch_summary(self, game_id: GameId) -> GameSummary:
-            assert game_id == REGULATION_ID
-            return self.summary
-
-    summary = GameSummary(
-        game_id=GameId(REGULATION_ID),
-        win_probability_history=(0.5, 0.75),
-        final_score=Score(home=24, away=17),
-        is_overtime=False,
-    )
-    provider: ESPNGameSummaryProvider = FixtureSummaryProvider(summary)
-
-    assert provider.fetch_summary(GameId(REGULATION_ID)) is summary

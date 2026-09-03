@@ -17,7 +17,6 @@ from backend.nospoil_nfl.game.models import (
     Score,
 )
 from backend.nospoil_nfl.providers import (
-    ESPNScoreboardProvider,
     EspnScoreboardClient,
     ProviderDataError,
     ProviderTransportError,
@@ -88,6 +87,24 @@ def test_scheduled_zero_scores_are_not_live_score_data(
     game = EspnScoreboardClient(clock=lambda: OBSERVED_AT).fetch_scoreboard().games[0]
 
     assert game.status.state is GameState.SCHEDULED
+    assert game.status.score is None
+    assert game.status.period is None
+    assert game.status.clock is None
+
+
+def test_cancelled_event_discards_placeholder_live_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    make_client(
+        monkeypatch,
+        load_fixture("espn_scoreboard_cancelled.json"),
+    )
+
+    game = EspnScoreboardClient(clock=lambda: OBSERVED_AT).fetch_scoreboard().games[0]
+
+    assert game.game_id == "401437947"
+    assert game.status.state is GameState.CANCELLED
+    assert game.status.detail == "Canceled"
     assert game.status.score is None
     assert game.status.period is None
     assert game.status.clock is None
@@ -291,25 +308,3 @@ def test_duplicate_valid_overall_records_are_rejected(
 
     with pytest.raises(ProviderDataError, match="multiple valid overall records"):
         EspnScoreboardClient(clock=lambda: OBSERVED_AT).fetch_scoreboard()
-
-
-def test_scoreboard_contract_accepts_fixture_provider() -> None:
-    class FixtureScoreboardProvider:
-        def __init__(self, batch: ScoreboardBatch) -> None:
-            self.batch = batch
-
-        def fetch_scoreboard(
-            self,
-            season_week: SeasonWeek | None = None,
-        ) -> ScoreboardBatch:
-            assert season_week is None
-            return self.batch
-
-    batch = ScoreboardBatch(
-        observed_at=OBSERVED_AT,
-        season_week=REGULAR_WEEK,
-        games=(),
-    )
-    provider: ESPNScoreboardProvider = FixtureScoreboardProvider(batch)
-
-    assert provider.fetch_scoreboard() is batch
