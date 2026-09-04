@@ -118,6 +118,15 @@ Required environment:
   `season-schedule-index`.
 - `NOSPOIL_ESPN_TIMEOUT_SECONDS`: bounded timeout for each ESPN request. It
   defaults to 8 seconds and cannot exceed 8 seconds.
+- `NOSPOIL_ESPN_SUMMARY_TIMEOUT_SECONDS`: bounded timeout for each provisional
+  ESPN summary request. It defaults to 5 seconds and cannot exceed 5 seconds.
+
+A live tick passes due final-game IDs directly from `ScheduleSyncService` to
+the provisional-rating service in the same Lambda invocation. At most two
+games are attempted per tick, in effective due-time order. Expected ESPN
+failures retry after 1, 3, and 10 minutes. A fourth expected failure marks the
+ESPN provisional path unavailable. Schedule-import modes do not make summary
+requests; the next live tick finds their durable due work.
 
 NS-013 must deploy these settings as one unit:
 

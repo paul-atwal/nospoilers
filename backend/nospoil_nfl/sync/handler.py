@@ -1,4 +1,4 @@
-"""AWS Lambda entry point for all NS-007 ESPN sync modes."""
+"""AWS Lambda entry point for ESPN sync and provisional-rating work."""
 
 from __future__ import annotations
 
@@ -8,18 +8,21 @@ import logging
 import os
 from typing import Callable
 
-from .models import SyncEvent, SyncResult
+from ..rating.provisional import ProvisionalRatingService
+from .models import SyncEvent, SyncMode, SyncResult
 from .service import ScheduleSyncService
 
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
 MAX_ESPN_TIMEOUT_SECONDS = 8.0
+MAX_ESPN_SUMMARY_TIMEOUT_SECONDS = 5.0
 
 
 def handle_event(
     raw_event: object,
     service: ScheduleSyncService,
+    provisional_ratings: ProvisionalRatingService,
     *,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> dict[str, object]:
@@ -27,7 +30,13 @@ def handle_event(
     parsed_event: SyncEvent | None = None
     try:
         parsed_event = SyncEvent.parse(raw_event)
-        result = service.run(parsed_event, now=clock())
+        now = clock()
+        result = service.run(parsed_event, now=now)
+        if parsed_event.mode is SyncMode.LIVE_TICK:
+            provisional_ratings.rate_due(
+                result.provisional_rating_game_ids,
+                now=now,
+            )
     except Exception as exc:
         mode = parsed_event.mode.value if parsed_event is not None else "invalid"
         scheduled_time = (
@@ -54,7 +63,7 @@ def lambda_handler(event: object, context: object) -> dict[str, object]:
     import boto3
 
     from ..game.dynamodb_repository import DynamoGameRepository
-    from ..providers import EspnScoreboardClient
+    from ..providers import EspnGameSummaryClient, EspnScoreboardClient
 
     del context
     table_name = _required_environment("NOSPOIL_GAMES_TABLE")
@@ -64,13 +73,24 @@ def lambda_handler(event: object, context: object) -> dict[str, object]:
         MAX_ESPN_TIMEOUT_SECONDS,
         maximum=MAX_ESPN_TIMEOUT_SECONDS,
     )
+    summary_timeout = _bounded_positive_float_environment(
+        "NOSPOIL_ESPN_SUMMARY_TIMEOUT_SECONDS",
+        MAX_ESPN_SUMMARY_TIMEOUT_SECONDS,
+        maximum=MAX_ESPN_SUMMARY_TIMEOUT_SECONDS,
+    )
     table = boto3.resource("dynamodb").Table(table_name)
+    repository = DynamoGameRepository(table, index_name=index_name)
     service = ScheduleSyncService(
-        DynamoGameRepository(table, index_name=index_name),
+        repository,
         EspnScoreboardClient(timeout_seconds=timeout),
         logger=LOGGER,
     )
-    return handle_event(event, service)
+    provisional_ratings = ProvisionalRatingService(
+        repository,
+        EspnGameSummaryClient(timeout_seconds=summary_timeout),
+        logger=LOGGER,
+    )
+    return handle_event(event, service, provisional_ratings)
 
 
 def _result_payload(result: SyncResult) -> dict[str, object]:
