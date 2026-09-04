@@ -13,6 +13,8 @@ from .service import ScheduleSyncService
 
 
 LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
+MAX_ESPN_TIMEOUT_SECONDS = 8.0
 
 
 def handle_event(
@@ -57,7 +59,11 @@ def lambda_handler(event: object, context: object) -> dict[str, object]:
     del context
     table_name = _required_environment("NOSPOIL_GAMES_TABLE")
     index_name = os.environ.get("NOSPOIL_SCHEDULE_INDEX", "season-schedule-index")
-    timeout = _positive_float_environment("NOSPOIL_ESPN_TIMEOUT_SECONDS", 8.0)
+    timeout = _bounded_positive_float_environment(
+        "NOSPOIL_ESPN_TIMEOUT_SECONDS",
+        MAX_ESPN_TIMEOUT_SECONDS,
+        maximum=MAX_ESPN_TIMEOUT_SECONDS,
+    )
     table = boto3.resource("dynamodb").Table(table_name)
     service = ScheduleSyncService(
         DynamoGameRepository(table, index_name=index_name),
@@ -89,7 +95,12 @@ def _required_environment(name: str) -> str:
     return value.strip()
 
 
-def _positive_float_environment(name: str, default: float) -> float:
+def _bounded_positive_float_environment(
+    name: str,
+    default: float,
+    *,
+    maximum: float,
+) -> float:
     raw = os.environ.get(name)
     if raw is None:
         return default
@@ -99,6 +110,8 @@ def _positive_float_environment(name: str, default: float) -> float:
         raise RuntimeError(f"{name} must be a positive number") from exc
     if value <= 0:
         raise RuntimeError(f"{name} must be a positive number")
+    if value > maximum:
+        raise RuntimeError(f"{name} must be no greater than {maximum:g}")
     return value
 
 

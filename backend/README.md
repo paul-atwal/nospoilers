@@ -117,7 +117,7 @@ Required environment:
 - `NOSPOIL_SCHEDULE_INDEX`: season/schedule index name. It defaults to
   `season-schedule-index`.
 - `NOSPOIL_ESPN_TIMEOUT_SECONDS`: bounded timeout for each ESPN request. It
-  defaults to 8 seconds.
+  defaults to 8 seconds and cannot exceed 8 seconds.
 
 NS-013 must deploy these settings as one unit:
 
@@ -125,8 +125,10 @@ NS-013 must deploy these settings as one unit:
   `backend.nospoil_nfl.sync.handler.lambda_handler`, a 55-second function
   timeout, reserved concurrency `1`, and no provisioned concurrency.
 - Direct EventBridge Scheduler Lambda targets with flexible windows disabled.
-  The live schedule runs every minute. Daily and weekly schedules use the job
-  inputs above. Each scheduled input uses the
+  Use UTC expressions `rate(1 minute)` for live work,
+  `cron(15 10 * * ? *)` for the daily near-term refresh, and
+  `cron(45 10 ? * TUE *)` for the weekly remaining-season refresh. Daily and
+  weekly runs are separated by 30 minutes. Each scheduled input uses the
   `<aws.scheduler.scheduled-time>` context attribute.
 - Live target retry policy: `MaximumEventAgeInSeconds=60` and
   `MaximumRetryAttempts=0`. Daily and weekly target retry policy:
@@ -140,5 +142,9 @@ NS-013 must deploy these settings as one unit:
 
 The application also rejects live events older than two minutes and daily or
 weekly events older than 15 minutes. It emits JSON logs without routine score
-values. NS-013 owns the AWS resources, schedule expressions, IAM resources,
+values at INFO level. Season-wide source reads use at most eight parallel
+requests. With at most 32 source-defined weeks and the enforced 8-second
+request timeout, scoreboard calls are bounded to five timeout waves (40
+seconds, including discovery), leaving 15 seconds of the 55-second Lambda
+timeout for storage and startup. NS-013 owns the AWS resources, IAM resources,
 log retention, and alarms; this change does not create them.

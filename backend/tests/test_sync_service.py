@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+import math
+import threading
+import time
 
 import pytest
 
@@ -28,6 +31,10 @@ from backend.nospoil_nfl.game import (
 from backend.nospoil_nfl.providers import ScheduleGame, ScheduleTeam, ScoreboardBatch
 from backend.nospoil_nfl.sync import ScheduleSyncService, SyncEvent, SyncMode
 from backend.nospoil_nfl.sync.records import TeamSide, prepare_team_records
+from backend.nospoil_nfl.sync.service import (
+    MAX_KNOWN_WEEKS,
+    SCHEDULE_FETCH_WORKERS,
+)
 
 
 NOW = datetime(2026, 9, 10, 17, 0, tzinfo=UTC)
@@ -145,6 +152,8 @@ class FakeScoreboard:
     ) -> ScoreboardBatch:
         self.calls.append(season_week)
         if season_week is None:
+            return self.discovery
+        if season_week == self.discovery.season_week:
             return self.discovery
         return self.by_week.get(season_week, batch(season_week))
 
@@ -287,12 +296,60 @@ def test_schedule_modes_select_source_defined_weeks(
     assert result.scoreboard_requests == len(expected)
 
 
+def test_season_schedule_fetches_use_a_bounded_parallel_pool() -> None:
+    class TrackingScoreboard(FakeScoreboard):
+        def __init__(self, discovery: ScoreboardBatch) -> None:
+            super().__init__(discovery)
+            self.active = 0
+            self.maximum_active = 0
+            self.lock = threading.Lock()
+
+        def fetch_scoreboard(
+            self,
+            season_week: SeasonWeek | None = None,
+        ) -> ScoreboardBatch:
+            if season_week is None:
+                return super().fetch_scoreboard(season_week)
+            with self.lock:
+                self.active += 1
+                self.maximum_active = max(self.maximum_active, self.active)
+            time.sleep(0.01)
+            try:
+                return super().fetch_scoreboard(season_week)
+            finally:
+                with self.lock:
+                    self.active -= 1
+
+    provider = TrackingScoreboard(batch(PRESEASON_1))
+
+    ScheduleSyncService(FakeRepository(), provider).run(
+        event(SyncMode.MANUAL_PRESEASON, season=2026),
+        now=NOW,
+    )
+
+    assert provider.maximum_active == min(SCHEDULE_FETCH_WORKERS, 5)
+    maximum_source_seconds = 8 * (
+        1 + math.ceil((MAX_KNOWN_WEEKS - 1) / SCHEDULE_FETCH_WORKERS)
+    )
+    assert maximum_source_seconds == 40
+
+
 def test_manual_import_rejects_unverified_season() -> None:
     provider = FakeScoreboard(batch(PRESEASON_1))
 
     with pytest.raises(ValueError, match="does not match"):
         ScheduleSyncService(FakeRepository(), provider).run(
             event(SyncMode.MANUAL_PRESEASON, season=2027),
+            now=NOW,
+        )
+
+
+def test_manual_import_rejects_current_week_missing_from_calendar() -> None:
+    provider = FakeScoreboard(batch(PRESEASON_1, known_weeks=(REGULAR_1, POSTSEASON_1)))
+
+    with pytest.raises(ValueError, match="current week is absent"):
+        ScheduleSyncService(FakeRepository(), provider).run(
+            event(SyncMode.MANUAL_PRESEASON, season=2026),
             now=NOW,
         )
 
@@ -308,6 +365,37 @@ def test_live_tick_makes_no_source_call_when_no_saved_game_is_due() -> None:
 
     assert provider.calls == []
     assert result.scoreboard_requests == 0
+
+
+def test_live_tick_selects_only_due_pending_rating_handoffs() -> None:
+    due_retry = GameRating(
+        RatingState.PENDING,
+        RatingRetry(1, NOW - timedelta(minutes=1), "summary unavailable"),
+    )
+    later_retry = GameRating(
+        RatingState.PENDING,
+        RatingRetry(1, NOW + timedelta(minutes=5), "summary unavailable"),
+    )
+    final = GameStatus(GameState.FINAL, score=Score(24, 17))
+    repository = FakeRepository(
+        (
+            saved_game("initial", status=final),
+            saved_game("due", status=final, rating=due_retry),
+            saved_game("later", status=final, rating=later_retry),
+        )
+    )
+    provider = FakeScoreboard(batch(REGULAR_1))
+
+    result = ScheduleSyncService(repository, provider).run(
+        event(SyncMode.LIVE_TICK, season=2026),
+        now=NOW,
+    )
+
+    assert result.provisional_rating_game_ids == (
+        GameId("initial"),
+        GameId("due"),
+    )
+    assert provider.calls == []
 
 
 def test_live_tick_uses_one_scoreboard_for_several_due_games() -> None:
@@ -332,11 +420,74 @@ def test_live_tick_uses_one_scoreboard_for_several_due_games() -> None:
         now=NOW,
     )
 
-    assert provider.calls == [None]
+    assert provider.calls == [REGULAR_1]
     assert result.scoreboard_requests == 1
     assert result.games_updated == 2
     assert repository.get(GameId("one")).status == live
     assert repository.get(GameId("two")).status == live
+
+
+def test_missing_started_game_is_checkpointed_and_has_a_finite_live_horizon() -> None:
+    started = GameStatus(
+        GameState.IN_PROGRESS,
+        period=4,
+        clock="0:10",
+        score=Score(21, 17),
+    )
+    current = saved_game(
+        "missing",
+        kickoff=NOW - timedelta(hours=11),
+        status=started,
+    )
+    provider = FakeScoreboard(batch(REGULAR_1))
+    repository = FakeRepository((current,))
+    service = ScheduleSyncService(repository, provider)
+
+    service.run(event(SyncMode.LIVE_TICK, season=2026), now=NOW)
+
+    assert provider.calls == [REGULAR_1]
+    assert repository.get(GameId("missing")).live_source_checked_at == NOW
+
+    provider.calls.clear()
+    service.run(
+        SyncEvent(SyncMode.LIVE_TICK, NOW + timedelta(hours=2), 2026),
+        now=NOW + timedelta(hours=2),
+    )
+
+    assert provider.calls == []
+
+
+def test_daily_refresh_recovers_nonterminal_game_from_a_past_week() -> None:
+    current = saved_game(
+        "old-live",
+        kickoff=NOW - timedelta(days=7),
+        status=GameStatus(
+            GameState.IN_PROGRESS,
+            period=4,
+            clock="0:10",
+            score=Score(21, 17),
+        ),
+    )
+    provider = FakeScoreboard(batch(REGULAR_2))
+    provider.by_week[REGULAR_1] = batch(
+        REGULAR_1,
+        observed_game(
+            "old-live",
+            kickoff=NOW - timedelta(days=7),
+            status=GameStatus(GameState.FINAL, score=Score(24, 17)),
+            home_record=record(2, 0),
+            away_record=record(0, 2),
+        ),
+    )
+    repository = FakeRepository((current,))
+
+    ScheduleSyncService(repository, provider).run(
+        event(SyncMode.DAILY_NEAR_TERM),
+        now=NOW,
+    )
+
+    assert REGULAR_1 in provider.calls
+    assert repository.get(GameId("old-live")).status.state is GameState.FINAL
 
 
 def test_daily_sync_creates_game_and_applies_flex_change_to_existing_game() -> None:
@@ -388,6 +539,67 @@ def test_newer_schedule_cannot_regress_a_final_game() -> None:
 
     assert result.rejected_transitions == 1
     assert repository.get(GameId("final")).status == final
+
+
+def test_rejected_final_observation_does_not_request_rating_for_cancelled_game() -> (
+    None
+):
+    frozen_record = record(1, 0, at=OLD)
+    current = saved_game(
+        "cancelled",
+        status=GameStatus(GameState.CANCELLED),
+        home_record=frozen_record,
+    )
+    provider = FakeScoreboard(
+        batch(
+            REGULAR_1,
+            observed_game(
+                "cancelled",
+                status=GameStatus(GameState.FINAL, score=Score(24, 17)),
+            ),
+        )
+    )
+    repository = FakeRepository((current,))
+
+    result = ScheduleSyncService(repository, provider).run(
+        event(SyncMode.DAILY_NEAR_TERM),
+        now=NOW,
+    )
+
+    assert repository.get(GameId("cancelled")).status.state is GameState.CANCELLED
+    assert repository.get(GameId("cancelled")).home.pregame_record == frozen_record
+    assert repository.get(GameId("cancelled")).home.postgame_record is None
+    assert result.provisional_rating_game_ids == ()
+
+
+def test_unstarted_delay_uses_postponed_bridge_for_moved_kickoff() -> None:
+    old_kickoff = NOW - timedelta(minutes=10)
+    new_kickoff = NOW + timedelta(hours=2)
+    current = saved_game(
+        "rescheduled",
+        kickoff=old_kickoff,
+        status=GameStatus(GameState.DELAYED),
+    )
+    provider = FakeScoreboard(
+        batch(REGULAR_1, observed_game("rescheduled", kickoff=new_kickoff))
+    )
+    repository = FakeRepository((current,))
+    service = ScheduleSyncService(repository, provider)
+
+    first = service.run(event(SyncMode.DAILY_NEAR_TERM), now=NOW)
+
+    assert first.rejected_transitions == 0
+    assert repository.get(GameId("rescheduled")).status.state is GameState.POSTPONED
+    assert repository.get(GameId("rescheduled")).kickoff_at == new_kickoff
+
+    provider.discovery = batch(
+        REGULAR_1,
+        observed_game("rescheduled", kickoff=new_kickoff),
+        observed_at=NOW + timedelta(minutes=1),
+    )
+    service.run(event(SyncMode.DAILY_NEAR_TERM), now=NOW + timedelta(minutes=1))
+
+    assert repository.get(GameId("rescheduled")).status.state is GameState.SCHEDULED
 
 
 def test_future_week_record_excludes_a_final_current_week_result() -> None:
@@ -504,12 +716,104 @@ def test_missing_records_and_started_odds_preserve_saved_values() -> None:
     assert stored.odds == known_odds
 
 
+def test_kickoff_freezes_records_and_odds_before_source_marks_game_started() -> None:
+    known_record = record(1, 0, at=OLD)
+    known_odds = OddsSnapshot("H -3.5", OLD)
+    current = saved_game(
+        "kickoff",
+        kickoff=NOW - timedelta(minutes=1),
+        home_record=known_record,
+        away_record=record(0, 1, at=OLD),
+        odds=known_odds,
+    )
+    provider = FakeScoreboard(
+        batch(
+            REGULAR_1,
+            observed_game(
+                "kickoff",
+                kickoff=NOW - timedelta(minutes=1),
+                home_record=record(2, 0),
+                away_record=record(0, 2),
+                odds=OddsSnapshot("H -7.5", NOW),
+            ),
+        )
+    )
+    repository = FakeRepository((current,))
+
+    ScheduleSyncService(repository, provider).run(
+        event(SyncMode.DAILY_NEAR_TERM),
+        now=NOW,
+    )
+
+    stored = repository.get(GameId("kickoff"))
+    assert stored.home.pregame_record == known_record
+    assert stored.odds == known_odds
+
+
+def test_team_side_correction_preserves_records_by_stable_id() -> None:
+    home_record = record(3, 1, at=OLD)
+    away_record = record(2, 2, at=OLD)
+    current = saved_game(
+        "swapped",
+        home_record=home_record,
+        away_record=away_record,
+    )
+    provider = FakeScoreboard(
+        batch(
+            REGULAR_1,
+            observed_game("swapped", home_id="A", away_id="H"),
+        )
+    )
+    repository = FakeRepository((current,))
+
+    ScheduleSyncService(repository, provider).run(
+        event(SyncMode.DAILY_NEAR_TERM),
+        now=NOW,
+    )
+
+    stored = repository.get(GameId("swapped"))
+    assert stored.home.team_id == "A"
+    assert stored.home.pregame_record == away_record
+    assert stored.away.team_id == "H"
+    assert stored.away.pregame_record == home_record
+
+
+def test_final_omitted_record_derives_postgame_from_frozen_pregame() -> None:
+    pregame = record(1, 0, at=OLD)
+    current = saved_game(
+        "final-omitted",
+        home_record=pregame,
+        away_record=record(0, 1, at=OLD),
+    )
+    provider = FakeScoreboard(
+        batch(
+            REGULAR_1,
+            observed_game(
+                "final-omitted",
+                status=GameStatus(GameState.FINAL, score=Score(21, 14)),
+            ),
+        )
+    )
+    repository = FakeRepository((current,))
+
+    ScheduleSyncService(repository, provider).run(
+        event(SyncMode.DAILY_NEAR_TERM),
+        now=NOW,
+    )
+
+    stored = repository.get(GameId("final-omitted"))
+    assert stored.home.pregame_record == pregame
+    assert stored.home.postgame_record.record == TeamRecord(2, 0)
+    assert stored.home.postgame_record.snapshot_at == NOW
+
+
 def test_playoff_records_remain_static_after_final() -> None:
     final = GameStatus(GameState.FINAL, score=Score(31, 28))
     prepared = prepare_team_records(
         phase=SeasonPhase.POSTSEASON,
         source_record=record(12, 5),
         source_status=final,
+        observed_at=NOW,
         side=TeamSide.HOME,
         saved_team=None,
         saved_status=None,

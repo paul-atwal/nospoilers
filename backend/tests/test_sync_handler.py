@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import logging
 from unittest.mock import Mock
 
 import pytest
 
 from backend.nospoil_nfl.game import DomainValidationError
-from backend.nospoil_nfl.sync.handler import handle_event
+from backend.nospoil_nfl.sync.handler import LOGGER, handle_event
 from backend.nospoil_nfl.sync.models import SyncMode, SyncResult
 
 
 NOW = datetime(2026, 9, 10, 17, 0, tzinfo=UTC)
+
+
+def test_sync_logger_emits_required_info_events_by_default() -> None:
+    assert LOGGER.isEnabledFor(logging.INFO)
 
 
 def test_handler_validates_event_and_returns_deployment_friendly_result() -> None:

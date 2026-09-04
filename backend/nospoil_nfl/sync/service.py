@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
@@ -13,6 +14,7 @@ from ..game import (
     GameId,
     GameRating,
     GameState,
+    GameStatus,
     LiveStatusUpdate,
     RatingRetry,
     RatingState,
@@ -40,6 +42,9 @@ NEAR_TERM_WEEK_COUNT = 3
 PREGAME_CHECK_WINDOW = timedelta(minutes=75)
 POST_KICKOFF_CHECK_WINDOW = timedelta(hours=8)
 MINIMUM_LIVE_CHECK_INTERVAL = timedelta(seconds=45)
+MAX_STARTED_RECOVERY_WINDOW = timedelta(hours=12)
+SCHEDULE_FETCH_WORKERS = 8
+MAX_KNOWN_WEEKS = 32
 
 
 class _Logger(Protocol):
@@ -132,15 +137,14 @@ class ScheduleSyncService:
     ) -> None:
         discovery = self._fetch(None, counts, purpose="calendar_discovery")
         weeks = _select_schedule_weeks(event, discovery)
+        weeks = self._include_recovery_weeks(discovery, weeks)
         exclusions = _future_week_exclusions(discovery)
+        current_index = discovery.known_weeks.index(discovery.season_week)
+        future_weeks = set(discovery.known_weeks[current_index + 1 :])
 
-        for week in weeks:
-            batch = (
-                discovery
-                if week == discovery.season_week
-                else self._fetch(week, counts, purpose="schedule_refresh")
-            )
-            week_exclusions = exclusions if week != discovery.season_week else {}
+        for batch in self._fetch_schedule_batches(discovery, weeks, counts):
+            week = batch.season_week
+            week_exclusions = exclusions if week in future_weeks else {}
             for observation in batch.games:
                 self._sync_schedule_game(
                     batch.season_week,
@@ -160,18 +164,26 @@ class ScheduleSyncService:
     ) -> None:
         assert event.season is not None
         candidates = self._repository.list_season(event.season)
-        due = [game for game in candidates if _needs_scoreboard_check(game, now)]
-        if not due:
+        handoffs.extend(
+            game.game_id for game in candidates if _needs_rating_handoff(game, now)
+        )
+        scoreboard_due = [
+            game for game in candidates if _needs_scoreboard_check(game, now)
+        ]
+        if not scoreboard_due:
             _emit(
                 self._logger,
                 "info",
-                "live_tick_no_work",
+                "live_tick_no_scoreboard_work",
                 mode=event.mode.value,
                 season=event.season,
+                provisional_rating_requests=len(handoffs),
             )
             return
 
-        batch = self._fetch(None, counts, purpose="live_tick")
+        selected_week = _select_live_week(scoreboard_due)
+        due = [game for game in scoreboard_due if game.season_week == selected_week]
+        batch = self._fetch(selected_week, counts, purpose="live_tick")
         if batch.season_week.season != event.season:
             raise ValueError("ESPN live scoreboard season does not match event season")
         observations = {game.game_id: game for game in batch.games}
@@ -185,6 +197,7 @@ class ScheduleSyncService:
                     game_id=str(current.game_id),
                     season=event.season,
                 )
+                self._checkpoint_missing_game(current, batch.observed_at, counts)
                 continue
             self._sync_live_game(
                 batch.season_week,
@@ -195,6 +208,75 @@ class ScheduleSyncService:
                 handoffs,
             )
 
+    def _include_recovery_weeks(
+        self,
+        discovery: ScoreboardBatch,
+        selected: tuple[SeasonWeek, ...],
+    ) -> tuple[SeasonWeek, ...]:
+        """Include known past weeks that still contain a nonterminal game."""
+        current_index = discovery.known_weeks.index(discovery.season_week)
+        past_weeks = set(discovery.known_weeks[:current_index])
+        recovery = {
+            game.season_week
+            for game in self._repository.list_season(discovery.season_week.season)
+            if game.season_week in past_weeks
+            and game.status.state not in {GameState.FINAL, GameState.CANCELLED}
+        }
+        wanted = set(selected) | recovery
+        return tuple(week for week in discovery.known_weeks if week in wanted)
+
+    def _fetch_schedule_batches(
+        self,
+        discovery: ScoreboardBatch,
+        weeks: tuple[SeasonWeek, ...],
+        counts: _Counts,
+    ) -> tuple[ScoreboardBatch, ...]:
+        """Fetch independent weeks concurrently, then return source order."""
+        requested = tuple(week for week in weeks if week != discovery.season_week)
+        if not requested:
+            return (discovery,) if discovery.season_week in weeks else ()
+
+        for week in requested:
+            self._log_source_call(week, purpose="schedule_refresh")
+        counts.scoreboard_requests += len(requested)
+        with ThreadPoolExecutor(
+            max_workers=min(SCHEDULE_FETCH_WORKERS, len(requested))
+        ) as executor:
+            fetched = tuple(executor.map(self._scoreboard.fetch_scoreboard, requested))
+        by_week = {batch.season_week: batch for batch in fetched}
+        if len(by_week) != len(fetched):
+            raise ValueError("ESPN returned duplicate requested schedule weeks")
+        if discovery.season_week in weeks:
+            by_week[discovery.season_week] = discovery
+        return tuple(by_week[week] for week in weeks)
+
+    def _checkpoint_missing_game(
+        self,
+        current: Game,
+        observed_at: datetime,
+        counts: _Counts,
+    ) -> None:
+        """Record a successful week check that omitted one expected game."""
+        result = self._repository.apply_live_status(
+            current,
+            LiveStatusUpdate(
+                game_id=current.game_id,
+                observed_at=observed_at,
+                status=current.status,
+            ),
+        )
+        if result is WriteResult.APPLIED:
+            counts.games_updated += 1
+        else:
+            counts.stale_writes += 1
+            _emit(
+                self._logger,
+                "info",
+                "stale_or_duplicate_write",
+                game_id=str(current.game_id),
+                write_type="missing_game_checkpoint",
+            )
+
     def _fetch(
         self,
         week: SeasonWeek | None,
@@ -203,6 +285,15 @@ class ScheduleSyncService:
         purpose: str,
     ) -> ScoreboardBatch:
         counts.scoreboard_requests += 1
+        self._log_source_call(week, purpose=purpose)
+        return self._scoreboard.fetch_scoreboard(week)
+
+    def _log_source_call(
+        self,
+        week: SeasonWeek | None,
+        *,
+        purpose: str,
+    ) -> None:
         _emit(
             self._logger,
             "info",
@@ -214,7 +305,6 @@ class ScheduleSyncService:
             phase=(week.phase.value if week is not None else None),
             week=(week.week if week is not None else None),
         )
-        return self._scoreboard.fetch_scoreboard(week)
 
     def _sync_schedule_game(
         self,
@@ -242,7 +332,7 @@ class ScheduleSyncService:
             if current is None:
                 raise RuntimeError("game create lost a race but no stored game exists")
 
-        update, rejected = _schedule_update(
+        update, rejected, bridged = _schedule_update(
             season_week,
             observed_at,
             observation,
@@ -260,10 +350,24 @@ class ScheduleSyncService:
                 current_state=current.status.state.value,
                 source_state=observation.status.state.value,
             )
+        if bridged:
+            _emit(
+                self._logger,
+                "info",
+                "reschedule_transition_bridged",
+                game_id=str(current.game_id),
+                current_state=current.status.state.value,
+                source_state=observation.status.state.value,
+            )
         result = self._repository.apply_schedule(current, update)
         _record_write(result, current.game_id, counts, self._logger)
-        if result is WriteResult.APPLIED:
-            _add_observation_handoff(current, observation, handoffs)
+        if (
+            result is WriteResult.APPLIED
+            and observation.status.state is GameState.FINAL
+        ):
+            persisted = self._repository.get(current.game_id)
+            if persisted is not None:
+                _add_rating_handoff(persisted, handoffs)
 
     def _sync_live_game(
         self,
@@ -274,18 +378,19 @@ class ScheduleSyncService:
         counts: _Counts,
         handoffs: list[GameId],
     ) -> None:
-        transition_allowed = can_transition_game_state(
-            current.status,
-            observation.status.state,
+        live_status, rejected, bridged = _schedule_status(
+            current,
+            observation,
+            include_status=True,
         )
         any_applied = False
-        if transition_allowed:
+        if live_status is not None:
             live_result = self._repository.apply_live_status(
                 current,
                 LiveStatusUpdate(
                     game_id=current.game_id,
                     observed_at=observed_at,
-                    status=observation.status,
+                    status=live_status,
                 ),
             )
             if live_result is WriteResult.APPLIED:
@@ -299,7 +404,7 @@ class ScheduleSyncService:
                     game_id=str(current.game_id),
                     write_type="live_status",
                 )
-        else:
+        if rejected:
             counts.rejected_transitions += 1
             _emit(
                 self._logger,
@@ -309,11 +414,20 @@ class ScheduleSyncService:
                 current_state=current.status.state.value,
                 source_state=observation.status.state.value,
             )
+        if bridged:
+            _emit(
+                self._logger,
+                "info",
+                "reschedule_transition_bridged",
+                game_id=str(current.game_id),
+                current_state=current.status.state.value,
+                source_state=observation.status.state.value,
+            )
 
         latest = self._repository.get(current.game_id)
         if latest is None:
             raise RuntimeError("game disappeared during live sync")
-        schedule_update, _ = _schedule_update(
+        schedule_update, _, _ = _schedule_update(
             season_week,
             observed_at,
             observation,
@@ -342,7 +456,10 @@ class ScheduleSyncService:
                 "game_changed",
                 game_id=str(current.game_id),
             )
-            _add_observation_handoff(latest, observation, handoffs)
+            if observation.status.state is GameState.FINAL:
+                persisted = self._repository.get(current.game_id)
+                if persisted is not None:
+                    _add_rating_handoff(persisted, handoffs)
 
 
 def _select_schedule_weeks(
@@ -352,6 +469,14 @@ def _select_schedule_weeks(
     known = discovery.known_weeks
     if not known:
         raise ValueError("ESPN scoreboard did not include schedule calendar metadata")
+    if len(known) > MAX_KNOWN_WEEKS:
+        raise ValueError("ESPN schedule calendar exceeds the bounded week limit")
+    try:
+        current_index = known.index(discovery.season_week)
+    except ValueError as exc:
+        raise ValueError(
+            "ESPN current week is absent from its schedule calendar"
+        ) from exc
     if event.mode is SyncMode.MANUAL_PRESEASON:
         assert event.season is not None
         if discovery.season_week.season != event.season:
@@ -362,12 +487,6 @@ def _select_schedule_weeks(
             if week.phase in {SeasonPhase.REGULAR_SEASON, SeasonPhase.POSTSEASON}
         )
 
-    try:
-        current_index = known.index(discovery.season_week)
-    except ValueError as exc:
-        raise ValueError(
-            "ESPN current week is absent from its schedule calendar"
-        ) from exc
     remaining = known[current_index:]
     if event.mode is SyncMode.DAILY_NEAR_TERM:
         return remaining[:NEAR_TERM_WEEK_COUNT]
@@ -408,6 +527,7 @@ def _new_game(
         phase=season_week.phase,
         source_record=observation.home.record,
         source_status=observation.status,
+        observed_at=observed_at,
         side=TeamSide.HOME,
         saved_team=None,
         saved_status=None,
@@ -417,6 +537,7 @@ def _new_game(
         phase=season_week.phase,
         source_record=observation.away.record,
         source_status=observation.status,
+        observed_at=observed_at,
         side=TeamSide.AWAY,
         saved_team=None,
         saved_status=None,
@@ -439,7 +560,15 @@ def _new_game(
         ),
         live_state_updated_at=(observed_at if observation.status.has_started else None),
         broadcaster=observation.broadcaster,
-        odds=observation.odds,
+        odds=(
+            None
+            if observation.status.has_started
+            or (
+                observation.kickoff_at is not None
+                and observed_at >= observation.kickoff_at
+            )
+            else observation.odds
+        ),
     )
 
 
@@ -466,42 +595,35 @@ def _schedule_update(
     exclusions: dict[str, tuple[TeamResult, ...]],
     *,
     include_status: bool,
-) -> tuple[ScheduleUpdate, bool]:
-    home_saved = (
-        current.home if current.home.team_id == observation.home.team_id else None
-    )
-    away_saved = (
-        current.away if current.away.team_id == observation.away.team_id else None
-    )
+) -> tuple[ScheduleUpdate, bool, bool]:
+    status, rejected, bridged = _schedule_status(current, observation, include_status)
+    freeze_pregame = _pregame_values_frozen(current, observation, observed_at)
+    record_status = current.status if rejected else observation.status
+    home_saved = _saved_team_by_id(current, observation.home.team_id)
+    away_saved = _saved_team_by_id(current, observation.away.team_id)
     home_records = prepare_team_records(
         phase=season_week.phase,
-        source_record=observation.home.record,
-        source_status=observation.status,
+        source_record=None if rejected else observation.home.record,
+        source_status=record_status,
+        observed_at=observed_at,
         side=TeamSide.HOME,
         saved_team=home_saved,
         saved_status=current.status,
+        freeze_pregame=freeze_pregame,
         excluded_results=exclusions.get(observation.home.team_id, ()),
     )
     away_records = prepare_team_records(
         phase=season_week.phase,
-        source_record=observation.away.record,
-        source_status=observation.status,
+        source_record=None if rejected else observation.away.record,
+        source_status=record_status,
+        observed_at=observed_at,
         side=TeamSide.AWAY,
         saved_team=away_saved,
         saved_status=current.status,
+        freeze_pregame=freeze_pregame,
         excluded_results=exclusions.get(observation.away.team_id, ()),
     )
-    rejected = include_status and not can_transition_game_state(
-        current.status,
-        observation.status.state,
-    )
-    odds = (
-        UNSET
-        if current.status.has_started
-        or observation.status.has_started
-        or observation.odds is None
-        else observation.odds
-    )
+    odds = UNSET if freeze_pregame or observation.odds is None else observation.odds
     return (
         ScheduleUpdate(
             game_id=current.game_id,
@@ -524,7 +646,7 @@ def _schedule_update(
                 pregame_record=away_records.pregame,
                 postgame_record=away_records.postgame,
             ),
-            status=(observation.status if include_status and not rejected else None),
+            status=status,
             broadcaster=(
                 observation.broadcaster
                 if observation.broadcaster is not None
@@ -533,7 +655,47 @@ def _schedule_update(
             odds=odds,
         ),
         rejected,
+        bridged,
     )
+
+
+def _schedule_status(
+    current: Game,
+    observation: ScheduleGame,
+    include_status: bool,
+) -> tuple[GameStatus | None, bool, bool]:
+    if not include_status:
+        return None, False, False
+    if can_transition_game_state(current.status, observation.status.state):
+        return observation.status, False, False
+    if (
+        current.status.state is GameState.DELAYED
+        and not current.status.has_started
+        and observation.status.state is GameState.SCHEDULED
+        and observation.kickoff_at is not None
+        and observation.kickoff_at != current.kickoff_at
+    ):
+        return GameStatus(GameState.POSTPONED), False, True
+    return None, True, False
+
+
+def _pregame_values_frozen(
+    current: Game,
+    observation: ScheduleGame,
+    observed_at: datetime,
+) -> bool:
+    if current.status.state in {GameState.FINAL, GameState.CANCELLED}:
+        return True
+    if current.status.has_started or observation.status.has_started:
+        return True
+    return observation.kickoff_at is not None and observed_at >= observation.kickoff_at
+
+
+def _saved_team_by_id(current: Game, team_id: str) -> TeamGameSnapshot | None:
+    for team in (current.home, current.away):
+        if team.team_id == team_id:
+            return team
+    return None
 
 
 def _needs_scoreboard_check(game: Game, now: datetime) -> bool:
@@ -543,7 +705,10 @@ def _needs_scoreboard_check(game: Game, now: datetime) -> bool:
         if now - game.live_source_checked_at < MINIMUM_LIVE_CHECK_INTERVAL:
             return False
     if game.status.has_started:
-        return True
+        return (
+            game.kickoff_at is not None
+            and now <= game.kickoff_at + MAX_STARTED_RECOVERY_WINDOW
+        )
     if game.kickoff_at is None:
         return False
     return (
@@ -551,6 +716,30 @@ def _needs_scoreboard_check(game: Game, now: datetime) -> bool:
         <= now
         <= game.kickoff_at + POST_KICKOFF_CHECK_WINDOW
     )
+
+
+def _needs_rating_handoff(game: Game, now: datetime) -> bool:
+    if game.status.state is not GameState.FINAL:
+        return False
+    if game.rating.state is not RatingState.PENDING:
+        return False
+    retry = game.rating.retry
+    if retry.next_attempt_at is not None:
+        return retry.next_attempt_at <= now
+    return retry.attempt_count == 0
+
+
+def _select_live_week(due: list[Game]) -> SeasonWeek:
+    def priority(game: Game) -> tuple[bool, datetime, datetime, str]:
+        oldest = game.live_source_checked_at or datetime.min.replace(
+            tzinfo=game.schedule_checked_at.tzinfo
+        )
+        kickoff = game.kickoff_at or datetime.max.replace(
+            tzinfo=game.schedule_checked_at.tzinfo
+        )
+        return (not game.status.has_started, oldest, kickoff, str(game.game_id))
+
+    return min(due, key=priority).season_week
 
 
 def _record_write(
@@ -565,18 +754,6 @@ def _record_write(
     else:
         counts.stale_writes += 1
         _emit(logger, "info", "stale_or_duplicate_write", game_id=str(game_id))
-
-
-def _add_observation_handoff(
-    current: Game,
-    observation: ScheduleGame,
-    handoffs: list[GameId],
-) -> None:
-    if (
-        observation.status.state is GameState.FINAL
-        and current.rating.state is RatingState.PENDING
-    ):
-        handoffs.append(current.game_id)
 
 
 def _add_rating_handoff(game: Game, handoffs: list[GameId]) -> None:
@@ -594,8 +771,11 @@ def _emit(logger: _Logger, level: str, event: str, **fields: object) -> None:
 
 __all__ = [
     "MINIMUM_LIVE_CHECK_INTERVAL",
+    "MAX_KNOWN_WEEKS",
+    "MAX_STARTED_RECOVERY_WINDOW",
     "NEAR_TERM_WEEK_COUNT",
     "POST_KICKOFF_CHECK_WINDOW",
     "PREGAME_CHECK_WINDOW",
+    "SCHEDULE_FETCH_WORKERS",
     "ScheduleSyncService",
 ]

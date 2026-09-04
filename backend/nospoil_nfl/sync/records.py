@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import datetime
 from enum import StrEnum
 
 from ..game import (
@@ -57,22 +58,44 @@ def prepare_team_records(
     phase: SeasonPhase,
     source_record: RecordSnapshot | None,
     source_status: GameStatus,
+    observed_at: datetime,
     side: TeamSide,
     saved_team: TeamGameSnapshot | None,
     saved_status: GameStatus | None,
+    freeze_pregame: bool = False,
     excluded_results: tuple[TeamResult, ...] = (),
 ) -> PreparedRecords:
     """Prepare records while preserving omissions and freezing started games."""
     if not isinstance(side, TeamSide):
         raise ValueError("side must be a TeamSide")
     if source_record is None:
-        missing = UNSET if saved_team is not None else None
-        return PreparedRecords(pregame=missing, postgame=missing)
+        if saved_team is None:
+            return PreparedRecords(pregame=None, postgame=None)
+        postgame = saved_team.postgame_record
+        if (
+            phase is not SeasonPhase.POSTSEASON
+            and source_status.state is GameState.FINAL
+            and postgame is None
+            and saved_team.pregame_record is not None
+        ):
+            result = _result_for_side(source_status, side)
+            if result is not None:
+                postgame = _apply_result(
+                    saved_team.pregame_record,
+                    result,
+                    observed_at=observed_at,
+                )
+        return PreparedRecords(
+            pregame=saved_team.pregame_record,
+            postgame=postgame,
+        )
 
     adjusted = _subtract_results(source_record, excluded_results)
     saved_pregame = saved_team.pregame_record if saved_team is not None else None
-    has_started = source_status.has_started or (
-        saved_status is not None and saved_status.has_started
+    has_started = (
+        freeze_pregame
+        or source_status.has_started
+        or (saved_status is not None and saved_status.has_started)
     )
 
     if phase is SeasonPhase.POSTSEASON:
@@ -82,11 +105,7 @@ def prepare_team_records(
         return PreparedRecords(pregame=pregame, postgame=None)
 
     if source_status.state is GameState.FINAL:
-        result = results_by_team(
-            source_status,
-            TeamSide.HOME.value,
-            TeamSide.AWAY.value,
-        ).get(side.value)
+        result = _result_for_side(source_status, side)
         pregame = saved_pregame
         if pregame is None and result is not None:
             pregame = _subtract_results(adjusted, (result,))
@@ -109,6 +128,32 @@ def _subtract_results(
             ties=max(0, record.ties - (result is TeamResult.TIE)),
         )
     return replace(snapshot, record=record)
+
+
+def _apply_result(
+    snapshot: RecordSnapshot,
+    result: TeamResult,
+    *,
+    observed_at: datetime,
+) -> RecordSnapshot:
+    record = snapshot.record
+    return replace(
+        snapshot,
+        record=TeamRecord(
+            wins=record.wins + (result is TeamResult.WIN),
+            losses=record.losses + (result is TeamResult.LOSS),
+            ties=record.ties + (result is TeamResult.TIE),
+        ),
+        snapshot_at=observed_at,
+    )
+
+
+def _result_for_side(status: GameStatus, side: TeamSide) -> TeamResult | None:
+    return results_by_team(
+        status,
+        TeamSide.HOME.value,
+        TeamSide.AWAY.value,
+    ).get(side.value)
 
 
 __all__ = [
