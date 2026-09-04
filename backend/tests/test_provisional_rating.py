@@ -218,6 +218,85 @@ def test_current_durable_revalidation_skips_confirmed_game() -> None:
     assert repository.games[GameId("one")].rating.state is RatingState.CONFIRMED
 
 
+def test_revalidation_reads_only_four_ordered_ids_to_find_two_games() -> None:
+    pending = make_game("pending", final_at=NOW - timedelta(minutes=5))
+    confirmed = replace(
+        make_game("confirmed", final_at=NOW - timedelta(minutes=4)),
+        rating=GameRating(
+            RatingState.CONFIRMED,
+            RatingRetry(),
+            score=6.5,
+            source=RatingSource.NFLVERSE,
+            model_version="rating-v1",
+            input_hash="confirmed",
+            calculated_at=NOW,
+            confirmed_at=NOW,
+        ),
+    )
+    third = make_game("third", final_at=NOW - timedelta(minutes=3))
+    fourth = make_game("fourth", final_at=NOW - timedelta(minutes=2))
+    fifth = make_game("fifth", final_at=NOW - timedelta(minutes=1))
+    repository = FakeRepository((pending, confirmed, third, fourth, fifth))
+    provider = FakeSummaryProvider([summary(pending), summary(third)])
+
+    ProvisionalRatingService(repository, provider).rate_due(
+        [
+            GameId("pending"),
+            GameId("confirmed"),
+            GameId("third"),
+            GameId("fourth"),
+            GameId("fifth"),
+        ],
+        now=NOW,
+    )
+
+    assert repository.get_calls == [
+        GameId("pending"),
+        GameId("confirmed"),
+        GameId("third"),
+        GameId("fourth"),
+    ]
+    assert provider.calls == [GameId("espn-pending"), GameId("espn-third")]
+
+
+def test_time_budget_gate_leaves_pending_before_summary_request() -> None:
+    game = make_game("one")
+    repository = FakeRepository((game,))
+    provider = FakeSummaryProvider(summary(game))
+    remaining = iter((20_000, 20_000, 11_999))
+
+    ProvisionalRatingService(
+        repository,
+        provider,
+        remaining_time_ms=lambda: next(remaining),
+    ).rate_due([GameId("one")], now=NOW)
+
+    assert repository.get_calls == [GameId("one")]
+    assert provider.calls == []
+    assert repository.games[GameId("one")].rating == game.rating
+
+
+def test_time_budget_gate_stops_revalidation_before_second_read() -> None:
+    first = replace(
+        make_game("first"),
+        status=GameStatus(GameState.SCHEDULED),
+    )
+    second = make_game("second")
+    repository = FakeRepository((first, second))
+    provider = FakeSummaryProvider(summary(second))
+    remaining = iter((20_000, 20_000, 11_999))
+
+    ProvisionalRatingService(
+        repository,
+        provider,
+        remaining_time_ms=lambda: next(remaining),
+    ).rate_due([GameId("first"), GameId("second")], now=NOW)
+
+    assert repository.get_calls == [GameId("first")]
+    assert provider.calls == []
+    assert repository.games[GameId("second")].rating.state is RatingState.PENDING
+
+
 def test_stale_conditional_write_keeps_durable_rating_unchanged() -> None:
     game = make_game("one")
     repository = FakeRepository((game,))
