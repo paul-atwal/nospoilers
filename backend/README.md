@@ -122,7 +122,7 @@ Required environment:
 NS-013 must deploy these settings as one unit:
 
 - One sync Lambda with handler
-  `backend.nospoil_nfl.sync.handler.lambda_handler`, a 55-second function
+  `backend.nospoil_nfl.sync.handler.lambda_handler`, a 45-second function
   timeout, reserved concurrency `1`, and no provisioned concurrency.
 - Direct EventBridge Scheduler Lambda targets with flexible windows disabled.
   Use UTC expressions `rate(1 minute)` for live work,
@@ -142,9 +142,11 @@ NS-013 must deploy these settings as one unit:
 
 The application also rejects live events older than two minutes and daily or
 weekly events older than 15 minutes. It emits JSON logs without routine score
-values at INFO level. Season-wide source reads use at most eight parallel
-requests. With at most 32 source-defined weeks and the enforced 8-second
-request timeout, scoreboard calls are bounded to five timeout waves (40
-seconds, including discovery), leaving 15 seconds of the 55-second Lambda
-timeout for storage and startup. NS-013 owns the AWS resources, IAM resources,
-log retention, and alarms; this change does not create them.
+values at INFO level. Season-wide source reads accept at most 32 source-defined
+weeks and use at most eight parallel requests. The ESPN setting bounds connect
+and read inactivity; it is not a total HTTP wall-clock deadline. The Lambda's
+45-second timeout is the hard invocation limit and leaves 15 seconds before the
+next one-minute live event. A timed-out daily or weekly run uses its bounded
+Scheduler retries. A missed live event is replaced by the next current tick.
+NS-013 owns the AWS resources, IAM resources, log retention, and alarms; this
+change does not create them.

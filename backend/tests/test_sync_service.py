@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-import math
 import threading
 import time
 
@@ -31,10 +30,7 @@ from backend.nospoil_nfl.game import (
 from backend.nospoil_nfl.providers import ScheduleGame, ScheduleTeam, ScoreboardBatch
 from backend.nospoil_nfl.sync import ScheduleSyncService, SyncEvent, SyncMode
 from backend.nospoil_nfl.sync.records import TeamSide, prepare_team_records
-from backend.nospoil_nfl.sync.service import (
-    MAX_KNOWN_WEEKS,
-    SCHEDULE_FETCH_WORKERS,
-)
+from backend.nospoil_nfl.sync.service import SCHEDULE_FETCH_WORKERS
 
 
 NOW = datetime(2026, 9, 10, 17, 0, tzinfo=UTC)
@@ -328,10 +324,6 @@ def test_season_schedule_fetches_use_a_bounded_parallel_pool() -> None:
     )
 
     assert provider.maximum_active == min(SCHEDULE_FETCH_WORKERS, 5)
-    maximum_source_seconds = 8 * (
-        1 + math.ceil((MAX_KNOWN_WEEKS - 1) / SCHEDULE_FETCH_WORKERS)
-    )
-    assert maximum_source_seconds == 40
 
 
 def test_manual_import_rejects_unverified_season() -> None:
@@ -858,6 +850,33 @@ def test_final_handoff_is_not_requested_for_usable_provisional_rating() -> None:
             observed_game(
                 "rated",
                 status=GameStatus(GameState.FINAL, score=Score(24, 17)),
+                home_record=record(2, 0),
+                away_record=record(0, 2),
+            ),
+        )
+    )
+
+    result = ScheduleSyncService(FakeRepository((current,)), provider).run(
+        event(SyncMode.DAILY_NEAR_TERM),
+        now=NOW,
+    )
+
+    assert result.provisional_rating_game_ids == ()
+
+
+def test_schedule_handoff_respects_future_rating_retry_time() -> None:
+    retry = GameRating(
+        RatingState.PENDING,
+        RatingRetry(1, NOW + timedelta(minutes=5), "summary unavailable"),
+    )
+    final_status = GameStatus(GameState.FINAL, score=Score(24, 17))
+    current = saved_game("retry-later", status=final_status, rating=retry)
+    provider = FakeScoreboard(
+        batch(
+            REGULAR_1,
+            observed_game(
+                "retry-later",
+                status=final_status,
                 home_record=record(2, 0),
                 away_record=record(0, 2),
             ),

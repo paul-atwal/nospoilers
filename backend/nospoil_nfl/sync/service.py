@@ -104,7 +104,7 @@ class ScheduleSyncService:
         if event.mode is SyncMode.LIVE_TICK:
             self._run_live(event, now, counts, handoffs)
         else:
-            self._run_schedule(event, counts, handoffs)
+            self._run_schedule(event, now, counts, handoffs)
 
         result = SyncResult(
             mode=event.mode,
@@ -132,6 +132,7 @@ class ScheduleSyncService:
     def _run_schedule(
         self,
         event: SyncEvent,
+        now: datetime,
         counts: _Counts,
         handoffs: list[GameId],
     ) -> None:
@@ -151,6 +152,7 @@ class ScheduleSyncService:
                     batch.observed_at,
                     observation,
                     week_exclusions,
+                    now,
                     counts,
                     handoffs,
                 )
@@ -204,6 +206,7 @@ class ScheduleSyncService:
                 batch.observed_at,
                 current,
                 observation,
+                now,
                 counts,
                 handoffs,
             )
@@ -312,6 +315,7 @@ class ScheduleSyncService:
         observed_at: datetime,
         observation: ScheduleGame,
         exclusions: dict[str, tuple[TeamResult, ...]],
+        now: datetime,
         counts: _Counts,
         handoffs: list[GameId],
     ) -> None:
@@ -326,7 +330,7 @@ class ScheduleSyncService:
                     "game_created",
                     game_id=str(game.game_id),
                 )
-                _add_rating_handoff(game, handoffs)
+                _add_rating_handoff(game, handoffs, now)
                 return
             current = self._repository.get(observation.game_id)
             if current is None:
@@ -367,7 +371,7 @@ class ScheduleSyncService:
         ):
             persisted = self._repository.get(current.game_id)
             if persisted is not None:
-                _add_rating_handoff(persisted, handoffs)
+                _add_rating_handoff(persisted, handoffs, now)
 
     def _sync_live_game(
         self,
@@ -375,6 +379,7 @@ class ScheduleSyncService:
         observed_at: datetime,
         current: Game,
         observation: ScheduleGame,
+        now: datetime,
         counts: _Counts,
         handoffs: list[GameId],
     ) -> None:
@@ -459,7 +464,7 @@ class ScheduleSyncService:
             if observation.status.state is GameState.FINAL:
                 persisted = self._repository.get(current.game_id)
                 if persisted is not None:
-                    _add_rating_handoff(persisted, handoffs)
+                    _add_rating_handoff(persisted, handoffs, now)
 
 
 def _select_schedule_weeks(
@@ -756,11 +761,12 @@ def _record_write(
         _emit(logger, "info", "stale_or_duplicate_write", game_id=str(game_id))
 
 
-def _add_rating_handoff(game: Game, handoffs: list[GameId]) -> None:
-    if (
-        game.status.state is GameState.FINAL
-        and game.rating.state is RatingState.PENDING
-    ):
+def _add_rating_handoff(
+    game: Game,
+    handoffs: list[GameId],
+    now: datetime,
+) -> None:
+    if _needs_rating_handoff(game, now):
         handoffs.append(game.game_id)
 
 
