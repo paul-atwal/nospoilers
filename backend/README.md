@@ -118,6 +118,18 @@ Required environment:
   `season-schedule-index`.
 - `NOSPOIL_ESPN_TIMEOUT_SECONDS`: bounded timeout for each ESPN request. It
   defaults to 8 seconds and cannot exceed 8 seconds.
+- `NOSPOIL_ESPN_SUMMARY_TIMEOUT_SECONDS`: bounded timeout for each provisional
+  ESPN summary request. It defaults to 5 seconds and cannot exceed 5 seconds.
+
+A live tick passes due final-game IDs directly from `ScheduleSyncService` to
+the provisional-rating service in the same Lambda invocation. At most two
+games are attempted per tick, in effective due-time order. The sync service
+returns ordered IDs; the rating service strongly reads at most four of them to
+find eligible games. The rating service stops before revalidation or another
+summary request when the Lambda has less than 12 seconds remaining. Expected
+ESPN failures retry after 1, 3, and 10 minutes. A fourth expected failure marks
+the ESPN provisional path unavailable. Schedule-import modes do not make
+summary requests; the next live tick finds their durable due work.
 
 NS-013 must deploy these settings as one unit:
 
@@ -150,11 +162,12 @@ NS-013 must deploy these settings as one unit:
 The application also rejects live events older than two minutes and daily or
 weekly events older than 15 minutes. It emits JSON logs without routine score
 values at INFO level. Season-wide source reads accept at most 32 source-defined
-weeks and use at most eight parallel requests. The ESPN setting bounds connect
-and read inactivity; it is not a total HTTP wall-clock deadline. The Lambda's
-45-second timeout is the hard execution limit and leaves 15 seconds before the
-next one-minute live event. Lambda applies execution-error and timeout retries
-from the invoked alias; Scheduler's separate policy only bounds target delivery.
+weeks and use at most eight parallel requests. The ESPN request timeout settings
+bound connect and read inactivity; they are not total HTTP wall-clock deadlines.
+The Lambda timeout remains the hard execution stop and leaves 15 seconds
+before the next one-minute live event. Lambda applies execution-error and
+timeout retries from the invoked alias; Scheduler's separate policy only bounds
+target delivery.
 A missed live event is replaced by the next current tick. NS-013 owns the AWS
 resources, versions, aliases, asynchronous invocation settings, IAM resources,
 log retention, and alarms; this change does not create them.

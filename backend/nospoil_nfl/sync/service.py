@@ -166,9 +166,11 @@ class ScheduleSyncService:
     ) -> None:
         assert event.season is not None
         candidates = self._repository.list_season(event.season)
-        handoffs.extend(
-            game.game_id for game in candidates if _needs_rating_handoff(game, now)
+        handoff_candidates = sorted(
+            (game for game in candidates if _needs_rating_handoff(game, now)),
+            key=_rating_handoff_priority,
         )
+        handoffs.extend(game.game_id for game in handoff_candidates)
         scoreboard_due = [
             game for game in candidates if _needs_scoreboard_check(game, now)
         ]
@@ -732,6 +734,19 @@ def _needs_rating_handoff(game: Game, now: datetime) -> bool:
     if retry.next_attempt_at is not None:
         return retry.next_attempt_at <= now
     return retry.attempt_count == 0
+
+
+def _rating_handoff_priority(game: Game) -> tuple[datetime, datetime, str]:
+    """Order provisional work by due time, kickoff, and stable game ID."""
+    due_at = game.rating.retry.next_attempt_at or (
+        game.live_state_updated_at
+        or game.schedule_updated_at
+        or game.schedule_checked_at
+    )
+    kickoff_at = game.kickoff_at or datetime.max.replace(
+        tzinfo=game.schedule_checked_at.tzinfo
+    )
+    return due_at, kickoff_at, str(game.game_id)
 
 
 def _select_live_week(due: list[Game]) -> SeasonWeek:

@@ -390,6 +390,46 @@ def test_live_tick_selects_only_due_pending_rating_handoffs() -> None:
     assert provider.calls == []
 
 
+def test_live_tick_orders_rating_handoffs_by_effective_due_time() -> None:
+    final = GameStatus(GameState.FINAL, score=Score(24, 17))
+    retry = GameRating(
+        RatingState.PENDING,
+        RatingRetry(1, NOW - timedelta(minutes=30), "summary unavailable"),
+    )
+    repository = FakeRepository(
+        (
+            saved_game(
+                "kickoff-later",
+                status=final,
+                live_checked_at=NOW - timedelta(minutes=5),
+                kickoff=NOW - timedelta(hours=1),
+            ),
+            saved_game(
+                "retry-first",
+                status=final,
+                rating=retry,
+                live_checked_at=NOW - timedelta(minutes=1),
+            ),
+            saved_game(
+                "final-first",
+                status=final,
+                live_checked_at=NOW - timedelta(minutes=20),
+            ),
+        )
+    )
+
+    result = ScheduleSyncService(repository, FakeScoreboard(batch(REGULAR_1))).run(
+        event(SyncMode.LIVE_TICK, season=2026),
+        now=NOW,
+    )
+
+    assert result.provisional_rating_game_ids == (
+        GameId("retry-first"),
+        GameId("final-first"),
+        GameId("kickoff-later"),
+    )
+
+
 def test_live_tick_uses_one_scoreboard_for_several_due_games() -> None:
     first = saved_game("one")
     second = replace(
