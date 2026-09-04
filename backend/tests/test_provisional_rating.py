@@ -22,7 +22,11 @@ from backend.nospoil_nfl.providers import (
     GameSummary,
     ProviderUnavailableError,
 )
-from backend.nospoil_nfl.rating import RatingInput, hash_rating_input
+from backend.nospoil_nfl.rating import (
+    RatingInput,
+    calculate_rating,
+    hash_rating_input,
+)
 from backend.nospoil_nfl.rating.provisional import ProvisionalRatingService
 
 
@@ -87,10 +91,12 @@ def make_game(
 
 
 def summary(game: Game) -> GameSummary:
+    final_score = game.status.score
+    assert final_score is not None
     return GameSummary(
         game_id=GameId(game.espn_id),
         win_probability_history=(0.5, 0.7, 0.4),
-        final_score=game.status.score,  # type: ignore[arg-type]
+        final_score=final_score,
         is_overtime=False,
     )
 
@@ -114,12 +120,32 @@ def test_success_reads_current_game_and_stores_provisional_rating() -> None:
 
     assert provider.calls == [GameId("espn-one")]
     stored = repository.games[GameId("one")].rating
+    rating_input = RatingInput((0.5, 0.7, 0.4), True)
     assert stored.state is RatingState.PROVISIONAL
+    assert stored.score == calculate_rating(rating_input)
     assert stored.source is RatingSource.ESPN
     assert stored.model_version == "rating-v1"
-    assert stored.input_hash == hash_rating_input(RatingInput((0.5, 0.7, 0.4), True))
+    assert stored.input_hash == hash_rating_input(rating_input)
     assert stored.calculated_at == NOW
     assert stored.retry == RatingRetry()
+
+
+def test_summary_score_mismatch_schedules_a_safe_retry() -> None:
+    game = make_game("one")
+    repository = FakeRepository((game,))
+    mismatched = replace(summary(game), final_score=Score(24, 16))
+
+    ProvisionalRatingService(repository, FakeSummaryProvider(mismatched)).rate_due(
+        [GameId("one")], now=NOW
+    )
+
+    stored = repository.games[GameId("one")].rating
+    assert stored.state is RatingState.PENDING
+    assert stored.retry == RatingRetry(
+        attempt_count=1,
+        next_attempt_at=NOW + timedelta(minutes=1),
+        last_error="espn_summary_score_mismatch",
+    )
 
 
 def test_retry_policy_is_bounded_and_exhausts_on_fourth_failure() -> None:
