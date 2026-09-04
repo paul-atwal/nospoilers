@@ -67,12 +67,14 @@ class ScheduleTeam:
     team_id: str
     display_name: str
     abbreviation: str
+    logo_key: str | None = None
     record: RecordSnapshot | None = None
 
     def __post_init__(self) -> None:
         _require_text("team_id", self.team_id)
         _require_text("display_name", self.display_name)
         _require_text("abbreviation", self.abbreviation)
+        _require_optional_text("logo_key", self.logo_key)
         if self.record is not None and not isinstance(self.record, RecordSnapshot):
             raise DomainValidationError("record must be a RecordSnapshot")
 
@@ -120,6 +122,7 @@ class ScoreboardBatch:
     observed_at: datetime
     season_week: SeasonWeek
     games: tuple[ScheduleGame, ...]
+    known_weeks: tuple[SeasonWeek, ...] = ()
 
     def __post_init__(self) -> None:
         _require_utc("scoreboard observed_at", self.observed_at)
@@ -133,6 +136,17 @@ class ScoreboardBatch:
         game_ids = [game.game_id for game in self.games]
         if len(game_ids) != len(set(game_ids)):
             raise DomainValidationError("scoreboard game IDs must be unique")
+        _require_tuple("scoreboard known_weeks", self.known_weeks)
+        if any(not isinstance(week, SeasonWeek) for week in self.known_weeks):
+            raise DomainValidationError(
+                "scoreboard known_weeks must contain SeasonWeek values"
+            )
+        if any(week.season != self.season_week.season for week in self.known_weeks):
+            raise DomainValidationError(
+                "scoreboard known weeks must match the scoreboard season"
+            )
+        if len(self.known_weeks) != len(set(self.known_weeks)):
+            raise DomainValidationError("scoreboard known weeks must be unique")
 
 
 @dataclass(frozen=True, slots=True)

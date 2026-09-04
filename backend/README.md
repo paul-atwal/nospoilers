@@ -92,3 +92,69 @@ The scheduler groups games by kickoff time. It checks ESPN every five minutes du
 - nflverse play-by-play data
 
 These upstream formats can change. Test schedule, identifier mapping, and win-probability parsing before each new season.
+
+## ESPN sync application entry point
+
+NS-007 provides `backend.nospoil_nfl.sync.handler.lambda_handler`. It accepts
+only these event shapes:
+
+```json
+{"mode":"manual_preseason","scheduledTime":"2026-08-01T17:00:00Z","season":2026}
+{"mode":"daily_near_term","scheduledTime":"<aws.scheduler.scheduled-time>"}
+{"mode":"weekly_remaining","scheduledTime":"<aws.scheduler.scheduled-time>"}
+{"mode":"live_tick","scheduledTime":"<aws.scheduler.scheduled-time>","season":2026}
+```
+
+The manual season is checked against ESPN metadata. Daily and weekly work gets
+the season, phase, current week, and remaining week list from ESPN metadata.
+The live season selects saved games before any source call; if work is due, the
+returned ESPN metadata must match it. Update that EventBridge input only after
+the preseason import verifies the new source season.
+
+Required environment:
+
+- `NOSPOIL_GAMES_TABLE`: DynamoDB games table name.
+- `NOSPOIL_SCHEDULE_INDEX`: season/schedule index name. It defaults to
+  `season-schedule-index`.
+- `NOSPOIL_ESPN_TIMEOUT_SECONDS`: bounded timeout for each ESPN request. It
+  defaults to 8 seconds and cannot exceed 8 seconds.
+
+NS-013 must deploy these settings as one unit:
+
+- One sync Lambda with handler
+  `backend.nospoil_nfl.sync.handler.lambda_handler`, a 45-second function
+  timeout, reserved concurrency `1`, no provisioned concurrency, and one
+  published version exposed through `live` and `schedule` aliases.
+- Direct EventBridge Scheduler Lambda targets with flexible windows disabled.
+  Use UTC expressions `rate(1 minute)` for live work,
+  `cron(15 10 * * ? *)` for the daily near-term refresh, and
+  `cron(45 10 ? * TUE *)` for the weekly remaining-season refresh. Daily and
+  weekly runs are separated by 30 minutes. Each scheduled input uses the
+  `<aws.scheduler.scheduled-time>` context attribute.
+- Target the `live` alias from the live schedule and the `schedule` alias from
+  the daily and weekly schedules. Apply both layers of asynchronous delivery
+  policy because Scheduler invokes Lambda asynchronously:
+  - Live Scheduler target and `live` alias Lambda event-invoke configuration:
+    `MaximumEventAgeInSeconds=60`, `MaximumRetryAttempts=0`.
+  - Daily and weekly Scheduler targets and `schedule` alias Lambda event-invoke
+    configuration: `MaximumEventAgeInSeconds=900`,
+    `MaximumRetryAttempts=2`.
+- No queue or dead-letter queue in the normal sync path. The next current live
+  tick replaces missed old work.
+- A Scheduler execution role limited to `lambda:InvokeFunction` on the `live`
+  and `schedule` alias ARNs. The Lambda role needs CloudWatch Logs writes and
+  only the games-table `dynamodb:GetItem`, `dynamodb:PutItem`,
+  `dynamodb:UpdateItem`, and `dynamodb:Query` actions, including query access
+  to the schedule index.
+
+The application also rejects live events older than two minutes and daily or
+weekly events older than 15 minutes. It emits JSON logs without routine score
+values at INFO level. Season-wide source reads accept at most 32 source-defined
+weeks and use at most eight parallel requests. The ESPN setting bounds connect
+and read inactivity; it is not a total HTTP wall-clock deadline. The Lambda's
+45-second timeout is the hard execution limit and leaves 15 seconds before the
+next one-minute live event. Lambda applies execution-error and timeout retries
+from the invoked alias; Scheduler's separate policy only bounds target delivery.
+A missed live event is replaced by the next current tick. NS-013 owns the AWS
+resources, versions, aliases, asynchronous invocation settings, IAM resources,
+log retention, and alarms; this change does not create them.

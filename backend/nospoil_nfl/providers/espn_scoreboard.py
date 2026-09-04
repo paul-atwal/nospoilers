@@ -170,11 +170,13 @@ def _normalize_scoreboard(
         _normalize_event(event, season_week=season_week, observed_at=observed_at)
         for event in events
     )
+    known_weeks = _normalize_known_weeks(root.get("leagues"), season_year)
     try:
         return ScoreboardBatch(
             observed_at=observed_at,
             season_week=season_week,
             games=games,
+            known_weeks=known_weeks,
         )
     except DomainValidationError as exc:
         raise _data_error("normalized ESPN scoreboard was invalid") from exc
@@ -188,8 +190,6 @@ def _normalize_event(
 ) -> ScheduleGame:
     source_event = _mapping(event, "event")
     event_id = _text(source_event.get("id"), "event.id")
-    kickoff_at = _timestamp(source_event.get("date"), "event.date")
-
     competitions = source_event.get("competitions")
     if not isinstance(competitions, list) or len(competitions) != 1:
         raise _data_error("event.competitions must contain exactly one competition")
@@ -218,6 +218,7 @@ def _normalize_event(
         source_event.get("status"),
         raw_scores,
     )
+    kickoff_at = _optional_timestamp(source_event.get("date"), "event.date")
     broadcaster = _normalize_broadcast(competition.get("broadcasts"))
     odds = _normalize_odds(
         competition.get("odds"),
@@ -264,6 +265,7 @@ def _normalize_team(
             team_id=team_id,
             display_name=display_name,
             abbreviation=abbreviation,
+            logo_key=team_id,
             record=record,
         )
     except DomainValidationError as exc:
@@ -320,6 +322,46 @@ def _normalize_record(
         )
     except DomainValidationError as exc:
         raise _data_error("normalized team record was invalid") from exc
+
+
+def _normalize_known_weeks(
+    leagues: object,
+    season: int,
+) -> tuple[SeasonWeek, ...]:
+    """Read the source calendar without assuming fixed phase lengths."""
+    if leagues is None:
+        return ()
+    if not isinstance(leagues, list) or len(leagues) != 1:
+        raise _data_error("leagues must contain exactly one league")
+    league = _mapping(leagues[0], "league")
+    league_season = _mapping(league.get("season"), "league.season")
+    if _positive_int(league_season.get("year"), "league.season.year") != season:
+        raise _data_error("league season does not match scoreboard season")
+    calendar = league.get("calendar")
+    if not isinstance(calendar, list):
+        raise _data_error("league.calendar must be a list")
+
+    weeks: list[SeasonWeek] = []
+    for phase_value in calendar:
+        source_phase = _mapping(phase_value, "calendar phase")
+        phase_number = _positive_int(source_phase.get("value"), "calendar phase.value")
+        phase = _SEASON_PHASES.get(phase_number)
+        if phase is None:
+            continue
+        entries = source_phase.get("entries")
+        if not isinstance(entries, list):
+            raise _data_error("supported calendar phase entries must be a list")
+        for entry_value in entries:
+            entry = _mapping(entry_value, "calendar entry")
+            week = _positive_int(entry.get("value"), "calendar entry.value")
+            weeks.append(SeasonWeek(season, phase, week))
+
+    phase_rank = {
+        SeasonPhase.PRESEASON: 0,
+        SeasonPhase.REGULAR_SEASON: 1,
+        SeasonPhase.POSTSEASON: 2,
+    }
+    return tuple(sorted(weeks, key=lambda item: (phase_rank[item.phase], item.week)))
 
 
 def _normalize_status(status: object, raw_scores: Mapping[str, object]) -> GameStatus:
@@ -541,6 +583,12 @@ def _timestamp(value: object, name: str) -> datetime:
     if parsed.tzinfo is None or parsed.utcoffset() != UTC.utcoffset(parsed):
         raise _data_error(f"{name} must be timezone-aware")
     return parsed.astimezone(UTC)
+
+
+def _optional_timestamp(value: object, name: str) -> datetime | None:
+    if value is None:
+        return None
+    return _timestamp(value, name)
 
 
 def _data_error(message: str) -> ProviderDataError:

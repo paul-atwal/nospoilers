@@ -34,6 +34,12 @@ the two representative 2025 regular-season PBP games. Together with
 
 ## ESPN scoreboard
 
+`espn_scoreboard_scheduled.json` is a trimmed 2026 Week 1 response captured on
+September 3, 2026. It keeps the source calendar phase and week values plus two
+scheduled events, stable team IDs, records, broadcaster, and odds. The calendar
+lets provider and sync tests verify source-defined schedule discovery without
+hard-coded NFL week counts.
+
 `espn_scoreboard_cancelled.json` is a trimmed response for the cancelled
 2022 regular-season Week 17 Bills-Bengals event, `401437947`. It preserves
 ESPN's placeholder period, clock, and 0-0 competitor scores so the provider

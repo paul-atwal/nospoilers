@@ -1,6 +1,36 @@
 {
   "season": {"year": 2026, "type": 2},
   "week": {"number": 1},
+  "leagues": [{
+    "season": {"year": 2026},
+    "calendar": [
+      {"label": "Preseason", "value": "1", "entries": [
+        {"label": "Hall of Fame Weekend", "value": "1"},
+        {"label": "Preseason Week 1", "value": "2"},
+        {"label": "Preseason Week 2", "value": "3"},
+        {"label": "Preseason Week 3", "value": "4"}
+      ]},
+      {"label": "Regular Season", "value": "2", "entries": [
+        {"label": "Week 1", "value": "1"}, {"label": "Week 2", "value": "2"},
+        {"label": "Week 3", "value": "3"}, {"label": "Week 4", "value": "4"},
+        {"label": "Week 5", "value": "5"}, {"label": "Week 6", "value": "6"},
+        {"label": "Week 7", "value": "7"}, {"label": "Week 8", "value": "8"},
+        {"label": "Week 9", "value": "9"}, {"label": "Week 10", "value": "10"},
+        {"label": "Week 11", "value": "11"}, {"label": "Week 12", "value": "12"},
+        {"label": "Week 13", "value": "13"}, {"label": "Week 14", "value": "14"},
+        {"label": "Week 15", "value": "15"}, {"label": "Week 16", "value": "16"},
+        {"label": "Week 17", "value": "17"}, {"label": "Week 18", "value": "18"}
+      ]},
+      {"label": "Postseason", "value": "3", "entries": [
+        {"label": "Wild Card", "value": "1"},
+        {"label": "Divisional Round", "value": "2"},
+        {"label": "Conference Championship", "value": "3"},
+        {"label": "Pro Bowl", "value": "4"},
+        {"label": "Super Bowl", "value": "5"}
+      ]},
+      {"label": "Off Season", "value": "4"}
+    ]
+  }],
   "events": [
     {
       "id": "401872656",
