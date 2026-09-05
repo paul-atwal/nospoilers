@@ -38,7 +38,8 @@ def main(
     now = (clock or (lambda: datetime.now(UTC)))()
     try:
         _require_utc(now)
-        season = args.season or _active_season(now)
+        seasons = _seasons_to_run(args.mode, args.season, now)
+        report_season = args.season or _active_season(now)
         timeout = _bounded_positive_float_environment(
             "NOSPOIL_NFLVERSE_TIMEOUT_SECONDS",
             DEFAULT_NFLVERSE_TIMEOUT_SECONDS,
@@ -49,13 +50,13 @@ def main(
 
         if args.mode == "verify":
             season_loader(
-                season,
+                report_season,
                 schedule_provider=schedule_provider,
                 play_provider=play_provider,
             )
             payload: dict[str, object] = {
                 "mode": "verify",
-                "season": season,
+                "season": report_season,
                 "ok": True,
                 "verified": True,
             }
@@ -77,19 +78,28 @@ def main(
             schedule_provider,
             play_provider,
         )
-        result = service.run(
-            season,
-            now=now,
+        results = [
+            service.run(
+                season,
+                now=now,
+                mode=args.mode,
+                game_id=args.game_id,
+            )
+            for season in seasons
+        ]
+        result = _combine_results(results)
+        payload = _result_payload(
+            result,
             mode=args.mode,
-            game_id=args.game_id,
+            season=report_season,
+            seasons=seasons,
         )
-        payload = _result_payload(result, mode=args.mode, season=season)
         _publish(payload, attention=_result_attention(result))
         return _exit_code(result)
     except ProviderError:
         payload = {
             "mode": args.mode,
-            "season": args.season or _active_season(now),
+            "season": report_season,
             "ok": False,
             "error": "source_failure",
         }
@@ -98,7 +108,7 @@ def main(
     except Exception as error:
         payload = {
             "mode": args.mode,
-            "season": args.season or _active_season(now),
+            "season": report_season,
             "ok": False,
             "error": _safe_error(error),
         }
@@ -128,13 +138,36 @@ def _result_payload(
     *,
     mode: str,
     season: int,
+    seasons: tuple[int, ...] | None = None,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "mode": mode,
         "season": season,
         "ok": _result_attention(result) is None,
         **asdict(result),
     }
+    if seasons is not None and len(seasons) > 1:
+        payload["seasons"] = list(seasons)
+    return payload
+
+
+def _combine_results(results: Sequence[ReconciliationResult]) -> ReconciliationResult:
+    return ReconciliationResult(
+        downloads=sum(result.downloads for result in results),
+        selected=sum(result.selected for result in results),
+        mappings=sum(result.mappings for result in results),
+        confirmed_updates=sum(result.confirmed_updates for result in results),
+        unchanged=sum(result.unchanged for result in results),
+        retries=sum(result.retries for result in results),
+        stale_writes=sum(result.stale_writes for result in results),
+        failures=sum(result.failures for result in results),
+        conflicts=sum(result.conflicts for result in results),
+        overdue=sum(result.overdue for result in results),
+        source_failure=any(result.source_failure for result in results),
+        manual_correction_failure=any(
+            result.manual_correction_failure for result in results
+        ),
+    )
 
 
 def _exit_code(result: ReconciliationResult) -> int:
@@ -186,6 +219,18 @@ def _publish(payload: dict[str, object], *, attention: str | None = None) -> Non
 
 def _active_season(now: datetime) -> int:
     return now.year - 1 if now.month in {1, 2} else now.year
+
+
+def _seasons_to_run(
+    mode: str,
+    explicit_season: int | None,
+    now: datetime,
+) -> tuple[int, ...]:
+    if explicit_season is not None:
+        return (explicit_season,)
+    if mode == "due":
+        return (now.year, now.year - 1)
+    return (_active_season(now),)
 
 
 def _positive_int(value: str) -> int:

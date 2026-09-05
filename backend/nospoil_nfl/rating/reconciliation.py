@@ -129,6 +129,13 @@ class NflverseReconciliationService:
 
         games = self._repository.list_season(season)
         state = _RunState()
+        if mode == "due":
+            state.overdue = sum(
+                _is_overdue(game, now)
+                for game in games
+                if game.status.state is GameState.FINAL
+                and game.rating.state is not RatingState.CONFIRMED
+            )
         selected = self._select_games(games, now, mode, game_id, state)
         state.selected = len(selected)
         if not selected:
@@ -180,7 +187,6 @@ class NflverseReconciliationService:
                         reason="changed_after_selection",
                     )
                     continue
-                self._record_overdue(current, now, mode, state)
                 if current.rating.state is not RatingState.CONFIRMED:
                     self._schedule_retry(
                         current, now, _provider_error_code(error), state, mode
@@ -198,7 +204,6 @@ class NflverseReconciliationService:
                     reason="changed_after_selection",
                 )
                 continue
-            self._record_overdue(current, now, mode, state)
             self._reconcile_one(current, source, now, mode, state)
         return state.result()
 
@@ -372,20 +377,6 @@ class NflverseReconciliationService:
         state.confirmed_updates += 1
         self._emit("info", "nflverse_rating_confirmed", game_id=str(current.game_id))
 
-    @staticmethod
-    def _record_overdue(
-        current: Game,
-        now: datetime,
-        mode: ReconciliationMode,
-        state: _RunState,
-    ) -> None:
-        if (
-            mode == "due"
-            and current.rating.state is not RatingState.CONFIRMED
-            and now - _initial_confirmation_due_at(current) > OVERDUE_AFTER
-        ):
-            state.overdue += 1
-
     def _record_validation_failure(
         self,
         current: Game,
@@ -461,6 +452,10 @@ def _initial_confirmation_due_at(game: Game) -> datetime:
         return game.rating.calculated_at + CONFIRMATION_DELAY
     final_at = game.live_state_updated_at or game.schedule_updated_at
     return final_at + CONFIRMATION_DELAY
+
+
+def _is_overdue(game: Game, now: datetime) -> bool:
+    return now - _initial_confirmation_due_at(game) > OVERDUE_AFTER
 
 
 def _provider_error_code(error: ProviderError) -> str:
