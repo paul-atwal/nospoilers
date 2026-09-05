@@ -187,8 +187,10 @@ Normal reconciliation selects due unconfirmed final games from the existing
 is six hours after the provisional calculation, or six hours after the durable
 final observation when no provisional calculation exists. A later source
 failure is retried after 6 hours, 12 hours, then 24 hours (capped at 24 hours).
-A due item more than 18 hours late raises a workflow failure and a GitHub error
-annotation. Routine not-ready retries are successful unless they are overdue.
+A due item more than 18 hours beyond its initial eligibility raises a workflow
+failure and a GitHub error annotation. Later retry times do not reset that
+overdue clock. Routine not-ready retries are successful unless they are
+overdue.
 Confirmed ratings are never downgraded; correction runs preserve a confirmed
 rating when source validation fails.
 

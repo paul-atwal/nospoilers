@@ -382,7 +382,7 @@ class NflverseReconciliationService:
         if (
             mode == "due"
             and current.rating.state is not RatingState.CONFIRMED
-            and now - _confirmation_due_at(current) > OVERDUE_AFTER
+            and now - _initial_confirmation_due_at(current) > OVERDUE_AFTER
         ):
             state.overdue += 1
 
@@ -453,6 +453,10 @@ def _confirmation_due_at(game: Game) -> datetime:
     retry_due = game.confirmation_retry.next_attempt_at
     if retry_due is not None:
         return retry_due
+    return _initial_confirmation_due_at(game)
+
+
+def _initial_confirmation_due_at(game: Game) -> datetime:
     if game.rating.state is RatingState.PROVISIONAL and game.rating.calculated_at is not None:
         return game.rating.calculated_at + CONFIRMATION_DELAY
     final_at = game.live_state_updated_at or game.schedule_updated_at

@@ -360,12 +360,19 @@ def test_validation_mismatch_retries_without_replacing_rating() -> None:
     assert repository.games[game.game_id].confirmation_retry.last_error == "nflverse_schedule_score_mismatch"
 
 
-def test_overdue_is_signaled_and_unavailable_rating_can_confirm() -> None:
+def test_overdue_uses_initial_eligibility_not_current_retry_due() -> None:
     unavailable = GameRating(
         RatingState.UNAVAILABLE,
         RatingRetry(attempt_count=4, last_error="espn_unavailable"),
     )
-    game = make_game("one", final_at=NOW - timedelta(hours=25), rating=unavailable)
+    game = replace(
+        make_game("one", final_at=NOW - timedelta(hours=25), rating=unavailable),
+        confirmation_retry=RatingRetry(
+            attempt_count=2,
+            next_attempt_at=NOW - timedelta(minutes=30),
+            last_error="nflverse_plays_not_ready",
+        ),
+    )
     repository = FakeRepository((game,))
     schedule, plays = source_for((game,))
 
