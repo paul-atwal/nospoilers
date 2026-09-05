@@ -40,6 +40,7 @@ from backend.nospoil_nfl.game.dynamodb_repository import DynamoGameRepository
 from backend.nospoil_nfl.game.repository import (
     GameRepositoryDataError,
     GameRepositoryError,
+    NflverseIdConflictError,
 )
 
 
@@ -108,6 +109,26 @@ def make_provisional_rating(*, score: float = 6.5) -> GameRating:
         model_version="rating-v1",
         input_hash="input-hash",
         calculated_at=CHECKED_AT,
+    )
+
+
+def make_unavailable_rating() -> GameRating:
+    return GameRating(
+        state=RatingState.UNAVAILABLE,
+        retry=RatingRetry(attempt_count=1, last_error="espn_unavailable"),
+    )
+
+
+def make_confirmed_rating(*, score: float = 7.5) -> GameRating:
+    return GameRating(
+        state=RatingState.CONFIRMED,
+        retry=RatingRetry(),
+        score=score,
+        source=RatingSource.NFLVERSE,
+        model_version="rating-v1",
+        input_hash="nflverse-input-hash",
+        calculated_at=CHECKED_AT,
+        confirmed_at=CHECKED_AT,
     )
 
 
@@ -819,6 +840,128 @@ def test_apply_rating_rejects_a_non_final_game_before_updating_it(
         repository.apply_rating(current, GameRating(RatingState.PENDING, RatingRetry()))
 
     assert repository.get(current.game_id) == current
+
+
+def test_apply_nflverse_mapping_is_safe_and_idempotent(game_table: object) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = make_final_game("401000001")
+    assert repository.create_if_absent(current) is True
+
+    assert repository.apply_nflverse_mapping(current, "2026_01_SEA_DET") is WriteResult.APPLIED
+    mapped = replace(current, nflverse_id="2026_01_SEA_DET")
+    assert repository.apply_nflverse_mapping(mapped, "2026_01_SEA_DET") is WriteResult.STALE
+
+    stored = repository.get(current.game_id)
+    assert stored is not None
+    assert stored.nflverse_id == "2026_01_SEA_DET"
+    assert stored.rating == current.rating
+
+
+def test_apply_nflverse_mapping_rejects_a_conflicting_id_without_overwrite(
+    game_table: object,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = replace(make_final_game("401000001"), nflverse_id="2026_01_SEA_DET")
+    assert repository.create_if_absent(current) is True
+
+    with pytest.raises(NflverseIdConflictError):
+        repository.apply_nflverse_mapping(current, "2026_01_XXX_YYY")
+
+    assert repository.get(current.game_id) == current
+
+
+def test_apply_nflverse_mapping_resolves_a_lost_write_race_with_a_strong_read(
+    game_table: object,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = make_final_game("401000001")
+    winner = replace(current, nflverse_id="2026_01_SEA_DET")
+    assert repository.create_if_absent(current) is True
+
+    assert repository.apply_nflverse_mapping(current, winner.nflverse_id or "") is WriteResult.APPLIED
+    with pytest.raises(NflverseIdConflictError):
+        repository.apply_nflverse_mapping(current, "2026_01_XXX_YYY")
+
+    assert repository.get(current.game_id) == winner
+
+
+def test_confirmation_retry_is_independent_and_conditionally_stale(
+    game_table: object,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = make_final_game("401000001")
+    retry = RatingRetry(
+        attempt_count=1,
+        next_attempt_at=CHECKED_AT.replace(hour=19),
+        last_error="nflverse play data not published",
+    )
+    assert repository.create_if_absent(current) is True
+
+    assert repository.apply_confirmation_retry(current, retry) is WriteResult.APPLIED
+    assert repository.apply_confirmation_retry(current, RatingRetry()) is WriteResult.STALE
+
+    stored = repository.get(current.game_id)
+    assert stored is not None
+    assert stored.confirmation_retry == retry
+    assert stored.rating == current.rating
+
+
+def test_confirmation_retry_cas_does_not_treat_missing_nondefault_as_default(
+    game_table: object,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = make_final_game("401000001")
+    first_retry = RatingRetry(
+        attempt_count=1,
+        next_attempt_at=CHECKED_AT.replace(hour=19),
+        last_error="nflverse play data not published",
+    )
+    next_retry = RatingRetry(
+        attempt_count=2,
+        next_attempt_at=CHECKED_AT.replace(hour=20),
+        last_error="nflverse play data not published",
+    )
+    assert repository.create_if_absent(current) is True
+    assert repository.apply_confirmation_retry(current, first_retry) is WriteResult.APPLIED
+
+    game_table.update_item(
+        Key={"game_id": str(current.game_id)},
+        UpdateExpression="REMOVE confirmation_retry",
+    )
+
+    retrying = replace(current, confirmation_retry=first_retry)
+    assert repository.apply_confirmation_retry(retrying, next_retry) is WriteResult.STALE
+
+    stored = repository.get(current.game_id)
+    assert stored is not None
+    assert stored.confirmation_retry == RatingRetry()
+    assert stored.rating == current.rating
+
+
+def test_unavailable_rating_can_be_confirmed_and_clears_confirmation_retry(
+    game_table: object,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = replace(make_final_game("401000001"), rating=make_unavailable_rating())
+    assert repository.create_if_absent(current) is True
+    assert repository.apply_nflverse_mapping(current, "2026_01_SEA_DET") is WriteResult.APPLIED
+    mapped = replace(current, nflverse_id="2026_01_SEA_DET")
+    retry = RatingRetry(
+        attempt_count=1,
+        next_attempt_at=CHECKED_AT.replace(hour=19),
+        last_error="nflverse play data not published",
+    )
+    assert repository.apply_confirmation_retry(mapped, retry) is WriteResult.APPLIED
+    retrying = replace(mapped, confirmation_retry=retry)
+
+    confirmed = make_confirmed_rating()
+    assert repository.apply_confirmed_rating(retrying, confirmed) is WriteResult.APPLIED
+
+    stored = repository.get(current.game_id)
+    assert stored is not None
+    assert stored.rating == confirmed
+    assert stored.confirmation_retry == RatingRetry()
+    assert stored.nflverse_id == "2026_01_SEA_DET"
 
 
 def test_get_wraps_a_dynamodb_transport_failure() -> None:

@@ -66,6 +66,18 @@ def test_codec_preserves_unknown_pregame_records() -> None:
     assert codec.decode(item) == game
 
 
+def test_codec_defaults_confirmation_retry_for_existing_items() -> None:
+    game = make_game("401000001")
+    codec = _DynamoGameCodec()
+    item = codec.encode(game)
+    del item["confirmation_retry"]
+
+    decoded = codec.decode(item)
+
+    assert decoded.confirmation_retry == RatingRetry()
+    assert decoded == game
+
+
 def test_codec_uses_kickoff_then_game_id_for_schedule_sorting() -> None:
     codec = _DynamoGameCodec()
     games = [

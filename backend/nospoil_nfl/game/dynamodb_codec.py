@@ -237,13 +237,7 @@ def _decode_status(item: Mapping[str, object]) -> GameStatus:
 
 
 def _encode_rating(rating: GameRating) -> dict[str, object]:
-    retry: dict[str, object] = {"attempt_count": rating.retry.attempt_count}
-    if rating.retry.next_attempt_at is not None:
-        retry["next_attempt_at"] = _format_timestamp(rating.retry.next_attempt_at)
-    if rating.retry.last_error is not None:
-        retry["last_error"] = rating.retry.last_error
-
-    item: dict[str, object] = {"state": rating.state.value, "retry": retry}
+    item: dict[str, object] = {"state": rating.state.value, "retry": _encode_retry(rating.retry)}
     if rating.score is not None:
         item["score"] = Decimal(str(rating.score))
     if rating.source is not None:
@@ -259,22 +253,40 @@ def _encode_rating(rating: GameRating) -> dict[str, object]:
     return item
 
 
+def _encode_retry(retry: RatingRetry) -> dict[str, object]:
+    """Encode one retry record shared by ESPN and nflverse-owned fields."""
+    item: dict[str, object] = {"attempt_count": retry.attempt_count}
+    if retry.next_attempt_at is not None:
+        item["next_attempt_at"] = _format_timestamp(retry.next_attempt_at)
+    if retry.last_error is not None:
+        item["last_error"] = retry.last_error
+    return item
+
+
+def _decode_retry(item: Mapping[str, object], *, field_name: str) -> RatingRetry:
+    """Decode one retry record with an error naming its owning field."""
+    try:
+        return RatingRetry(
+            attempt_count=_required_int(item, "attempt_count"),
+            next_attempt_at=(
+                _parse_timestamp(
+                    item.get("next_attempt_at"), f"{field_name} next_attempt_at"
+                )
+                if "next_attempt_at" in item
+                else None
+            ),
+            last_error=_optional_text(item, "last_error"),
+        )
+    except (DomainValidationError, ValueError) as error:
+        raise GameRepositoryDataError(f"invalid stored {field_name}") from error
+
+
 def _decode_rating(item: Mapping[str, object]) -> GameRating:
     retry_item = _required_map(item, "retry")
     try:
         return GameRating(
             state=RatingState(_required_text(item, "state")),
-            retry=RatingRetry(
-                attempt_count=_required_int(retry_item, "attempt_count"),
-                next_attempt_at=(
-                    _parse_timestamp(
-                        retry_item.get("next_attempt_at"), "rating next_attempt_at"
-                    )
-                    if "next_attempt_at" in retry_item
-                    else None
-                ),
-                last_error=_optional_text(retry_item, "last_error"),
-            ),
+            retry=_decode_retry(retry_item, field_name="rating retry"),
             score=_optional_number(item, "score"),
             source=(
                 RatingSource(_required_text(item, "source"))
@@ -322,6 +334,7 @@ class _DynamoGameCodec:
             "away": _encode_team(game.away),
             "status": _encode_status(game.status),
             "rating": _encode_rating(game.rating),
+            "confirmation_retry": _encode_retry(game.confirmation_retry),
             "schedule_checked_at": _format_timestamp(game.schedule_checked_at),
             "schedule_updated_at": _format_timestamp(game.schedule_updated_at),
         }
@@ -380,6 +393,14 @@ class _DynamoGameCodec:
                 away=_decode_team(_required_map(item, "away")),
                 status=_decode_status(_required_map(item, "status")),
                 rating=_decode_rating(_required_map(item, "rating")),
+                confirmation_retry=(
+                    _decode_retry(
+                        _required_map(item, "confirmation_retry"),
+                        field_name="confirmation retry",
+                    )
+                    if "confirmation_retry" in item
+                    else RatingRetry()
+                ),
                 schedule_checked_at=_parse_timestamp(
                     item.get("schedule_checked_at"), "schedule_checked_at"
                 ),

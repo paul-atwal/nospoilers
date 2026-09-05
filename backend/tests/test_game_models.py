@@ -219,6 +219,39 @@ def test_non_final_game_cannot_have_a_completed_rating() -> None:
         make_game(rating=make_provisional_rating())
 
 
+def test_non_final_game_cannot_have_confirmation_retry_work() -> None:
+    with pytest.raises(
+        DomainValidationError,
+        match="only a final game can have confirmation retry work",
+    ):
+        make_game(
+            confirmation_retry=RatingRetry(
+                attempt_count=1,
+                next_attempt_at=CHECKED_AT + timedelta(hours=1),
+                last_error="nflverse not ready",
+            )
+        )
+
+
+def test_confirmed_game_cannot_have_confirmation_retry_work() -> None:
+    with pytest.raises(
+        DomainValidationError,
+        match="confirmed game rating cannot have confirmation retry work",
+    ):
+        make_game(
+            status=GameStatus(
+                state=GameState.FINAL,
+                score=Score(home=24, away=17),
+            ),
+            rating=make_confirmed_rating(),
+            confirmation_retry=RatingRetry(
+                attempt_count=1,
+                next_attempt_at=CHECKED_AT + timedelta(hours=1),
+                last_error="nflverse not ready",
+            ),
+        )
+
+
 def test_final_game_accepts_a_confirmed_nflverse_rating() -> None:
     game = make_game(
         status=GameStatus(

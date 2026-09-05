@@ -157,7 +157,10 @@ def test_started_delay_cannot_regress_to_postponed() -> None:
             },
         ),
         (RatingState.CONFIRMED, {RatingState.CONFIRMED}),
-        (RatingState.UNAVAILABLE, {RatingState.UNAVAILABLE}),
+        (
+            RatingState.UNAVAILABLE,
+            {RatingState.UNAVAILABLE, RatingState.CONFIRMED},
+        ),
     ],
 )
 def test_rating_state_transition_matrix(

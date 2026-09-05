@@ -10,6 +10,7 @@ from .models import (
     GameId,
     GameRating,
     GameState,
+    RatingRetry,
     SeasonWeek,
 )
 from .rules import can_transition_rating_state
@@ -22,6 +23,10 @@ class GameRepositoryError(RuntimeError):
 
 class GameRepositoryDataError(GameRepositoryError):
     """Raised when a stored item cannot become a valid game."""
+
+
+class NflverseIdConflictError(GameRepositoryError):
+    """Raised when an ESPN game is already mapped to another nflverse game."""
 
 
 def validate_rating_update(current: Game, rating: GameRating) -> None:
@@ -75,10 +80,35 @@ class GameRepository(Protocol):
         """Apply one complete rating when the current item still matches."""
         ...
 
+    def apply_nflverse_mapping(
+        self,
+        current: Game,
+        nflverse_id: str,
+    ) -> WriteResult:
+        """Persist one immutable ESPN-to-nflverse mapping."""
+        ...
+
+    def apply_confirmation_retry(
+        self,
+        current: Game,
+        retry: RatingRetry,
+    ) -> WriteResult:
+        """Persist nflverse confirmation retry metadata only."""
+        ...
+
+    def apply_confirmed_rating(
+        self,
+        current: Game,
+        rating: GameRating,
+    ) -> WriteResult:
+        """Atomically persist a confirmed rating and clear its retry metadata."""
+        ...
+
 
 __all__ = [
     "GameRepository",
     "GameRepositoryDataError",
     "GameRepositoryError",
+    "NflverseIdConflictError",
     "validate_rating_update",
 ]

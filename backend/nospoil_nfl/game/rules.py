@@ -72,7 +72,9 @@ _RATING_STATE_TRANSITIONS: dict[RatingState, frozenset[RatingState]] = {
         }
     ),
     RatingState.CONFIRMED: frozenset({RatingState.CONFIRMED}),
-    RatingState.UNAVAILABLE: frozenset({RatingState.UNAVAILABLE}),
+    RatingState.UNAVAILABLE: frozenset(
+        {RatingState.UNAVAILABLE, RatingState.CONFIRMED}
+    ),
 }
 
 
