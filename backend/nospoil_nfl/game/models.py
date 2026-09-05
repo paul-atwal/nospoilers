@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
 import math
@@ -373,6 +373,7 @@ class Game:
     live_state_updated_at: datetime | None = None
     broadcaster: str | None = None
     odds: OddsSnapshot | None = None
+    confirmation_retry: RatingRetry = field(default_factory=RatingRetry)
 
     def __post_init__(self) -> None:
         _require_text("game_id", self.game_id)
@@ -388,6 +389,8 @@ class Game:
             raise DomainValidationError("status must be a GameStatus")
         if not isinstance(self.rating, GameRating):
             raise DomainValidationError("rating must be a GameRating")
+        if not isinstance(self.confirmation_retry, RatingRetry):
+            raise DomainValidationError("confirmation_retry must be a RatingRetry")
 
         if self.kickoff_at is not None:
             _require_utc("kickoff_at", self.kickoff_at)
@@ -411,6 +414,15 @@ class Game:
             if self.rating.state is not RatingState.PENDING:
                 raise DomainValidationError(
                     "only a final game can have a completed rating state"
+                )
+            if self.confirmation_retry != RatingRetry():
+                raise DomainValidationError(
+                    "only a final game can have confirmation retry work"
+                )
+        if self.rating.state is RatingState.CONFIRMED:
+            if self.confirmation_retry != RatingRetry():
+                raise DomainValidationError(
+                    "confirmed game rating cannot have confirmation retry work"
                 )
 
         _require_utc("schedule_checked_at", self.schedule_checked_at)

@@ -10,6 +10,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from .dynamodb_codec import (
     _DynamoGameCodec,
+    _encode_retry,
     _encode_rating,
     _season_key,
     _week_schedule_prefix,
@@ -19,8 +20,11 @@ from .models import (
     Game,
     GameId,
     GameRating,
+    GameState,
     OddsSnapshot,
     RecordSnapshot,
+    RatingRetry,
+    RatingState,
     SeasonWeek,
     TeamGameSnapshot,
 )
@@ -28,6 +32,7 @@ from .repository import (
     GameRepository,
     GameRepositoryDataError,
     GameRepositoryError,
+    NflverseIdConflictError,
     validate_rating_update,
 )
 from .rules import can_transition_game_state
@@ -235,6 +240,8 @@ class DynamoGameRepository(GameRepository):
     def apply_rating(self, current: Game, rating: GameRating) -> WriteResult:
         """Apply a complete rating without replacing non-rating game data."""
         validate_rating_update(current, rating)
+        if rating.state is RatingState.CONFIRMED:
+            return self.apply_confirmed_rating(current, rating)
         if rating == current.rating:
             return WriteResult.STALE
 
@@ -243,6 +250,197 @@ class DynamoGameRepository(GameRepository):
         except _StaleWrite:
             return WriteResult.STALE
         return WriteResult.APPLIED
+
+    def apply_nflverse_mapping(
+        self,
+        current: Game,
+        nflverse_id: str,
+    ) -> WriteResult:
+        """Persist one immutable ESPN-to-nflverse mapping."""
+        if not isinstance(current, Game):
+            raise DomainValidationError("current must be a Game")
+        if not isinstance(nflverse_id, str) or not nflverse_id.strip():
+            raise DomainValidationError("nflverse_id must be non-empty text")
+        if current.nflverse_id is not None:
+            if current.nflverse_id == nflverse_id:
+                return WriteResult.STALE
+            raise NflverseIdConflictError(
+                f"game {current.game_id} is already mapped to another nflverse game"
+            )
+
+        try:
+            self._update_nflverse_mapping_item(current, nflverse_id)
+        except _StaleWrite:
+            latest = self.get(current.game_id)
+            if latest is None or latest.nflverse_id is None:
+                return WriteResult.STALE
+            if latest.nflverse_id != nflverse_id:
+                raise NflverseIdConflictError(
+                    f"game {current.game_id} is already mapped to another nflverse game"
+                )
+            return WriteResult.STALE
+        return WriteResult.APPLIED
+
+    def apply_confirmation_retry(
+        self,
+        current: Game,
+        retry: RatingRetry,
+    ) -> WriteResult:
+        """Persist nflverse confirmation retry metadata only."""
+        if not isinstance(current, Game):
+            raise DomainValidationError("current must be a Game")
+        if not isinstance(retry, RatingRetry):
+            raise DomainValidationError("retry must be a RatingRetry")
+        if current.status.state is not GameState.FINAL:
+            raise DomainValidationError("confirmation retries require a final game")
+        if current.rating.state is RatingState.CONFIRMED:
+            raise DomainValidationError("confirmed ratings cannot have retry work")
+        if retry == current.confirmation_retry:
+            return WriteResult.STALE
+
+        try:
+            self._update_confirmation_retry_item(current, retry)
+        except _StaleWrite:
+            return WriteResult.STALE
+        return WriteResult.APPLIED
+
+    def apply_confirmed_rating(
+        self,
+        current: Game,
+        rating: GameRating,
+    ) -> WriteResult:
+        """Atomically persist a confirmed rating and clear retry metadata."""
+        validate_rating_update(current, rating)
+        if rating.state is not RatingState.CONFIRMED:
+            raise DomainValidationError("confirmed rating update requires confirmed state")
+        if current.nflverse_id is None:
+            raise DomainValidationError(
+                "confirmed rating update requires an nflverse mapping"
+            )
+        if rating == current.rating and current.confirmation_retry == RatingRetry():
+            return WriteResult.STALE
+
+        try:
+            self._update_confirmed_rating_item(current, rating)
+        except _StaleWrite:
+            return WriteResult.STALE
+        return WriteResult.APPLIED
+
+    def _update_nflverse_mapping_item(self, current: Game, nflverse_id: str) -> None:
+        """Conditionally set a missing mapping without changing other fields."""
+        try:
+            self._table.update_item(
+                Key={"game_id": str(current.game_id)},
+                UpdateExpression="SET #nflverse_id = :nflverse_id",
+                ConditionExpression=(
+                    "attribute_exists(#game_id) AND "
+                    "(attribute_not_exists(#nflverse_id) OR "
+                    "#nflverse_id = :nflverse_id)"
+                ),
+                ExpressionAttributeNames={
+                    "#game_id": "game_id",
+                    "#nflverse_id": "nflverse_id",
+                },
+                ExpressionAttributeValues={":nflverse_id": nflverse_id},
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                raise _StaleWrite from error
+            raise GameRepositoryError("could not update nflverse mapping in DynamoDB") from error
+        except BotoCoreError as error:
+            raise GameRepositoryError("could not update nflverse mapping in DynamoDB") from error
+
+    def _update_confirmation_retry_item(
+        self,
+        current: Game,
+        retry: RatingRetry,
+    ) -> None:
+        """Conditionally replace only the nflverse confirmation retry map."""
+        current_item = self._codec.encode(current)
+        try:
+            self._table.update_item(
+                Key={"game_id": str(current.game_id)},
+                UpdateExpression="SET #confirmation_retry = :confirmation_retry",
+                ConditionExpression=(
+                    "attribute_exists(#game_id) AND #rating = :expected_rating "
+                    "AND #status = :expected_status AND "
+                    f"{self._confirmation_retry_condition(current)}"
+                ),
+                ExpressionAttributeNames={
+                    "#game_id": "game_id",
+                    "#rating": "rating",
+                    "#status": "status",
+                    "#confirmation_retry": "confirmation_retry",
+                },
+                ExpressionAttributeValues={
+                    ":confirmation_retry": _encode_retry(retry),
+                    ":expected_rating": current_item["rating"],
+                    ":expected_status": current_item["status"],
+                    ":expected_confirmation_retry": _encode_retry(
+                        current.confirmation_retry
+                    ),
+                },
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                raise _StaleWrite from error
+            raise GameRepositoryError("could not update confirmation retry in DynamoDB") from error
+        except BotoCoreError as error:
+            raise GameRepositoryError("could not update confirmation retry in DynamoDB") from error
+
+    def _update_confirmed_rating_item(
+        self,
+        current: Game,
+        rating: GameRating,
+    ) -> None:
+        """Conditionally replace rating and clear retry as one write."""
+        current_item = self._codec.encode(current)
+        try:
+            self._table.update_item(
+                Key={"game_id": str(current.game_id)},
+                UpdateExpression=(
+                    "SET #rating = :rating, #confirmation_retry = :confirmation_retry"
+                ),
+                ConditionExpression=(
+                    "attribute_exists(#game_id) AND #rating = :expected_rating "
+                    "AND #status = :expected_status "
+                    "AND #nflverse_id = :expected_nflverse_id AND "
+                    f"{self._confirmation_retry_condition(current)}"
+                ),
+                ExpressionAttributeNames={
+                    "#game_id": "game_id",
+                    "#rating": "rating",
+                    "#status": "status",
+                    "#nflverse_id": "nflverse_id",
+                    "#confirmation_retry": "confirmation_retry",
+                },
+                ExpressionAttributeValues={
+                    ":rating": _encode_rating(rating),
+                    ":confirmation_retry": _encode_retry(RatingRetry()),
+                    ":expected_rating": current_item["rating"],
+                    ":expected_status": current_item["status"],
+                    ":expected_nflverse_id": current_item["nflverse_id"],
+                    ":expected_confirmation_retry": _encode_retry(
+                        current.confirmation_retry
+                    ),
+                },
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                raise _StaleWrite from error
+            raise GameRepositoryError("could not update confirmed rating in DynamoDB") from error
+        except BotoCoreError as error:
+            raise GameRepositoryError("could not update confirmed rating in DynamoDB") from error
+
+    @staticmethod
+    def _confirmation_retry_condition(current: Game) -> str:
+        """Match a missing retry field only for the legacy default value."""
+        if current.confirmation_retry == RatingRetry():
+            return (
+                "(attribute_not_exists(#confirmation_retry) OR "
+                "#confirmation_retry = :expected_confirmation_retry)"
+            )
+        return "#confirmation_retry = :expected_confirmation_retry"
 
     def _scheduled_game(self, current: Game, update: ScheduleUpdate) -> Game:
         """Build a complete game from a current game and schedule-owned fields."""

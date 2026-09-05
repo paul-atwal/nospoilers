@@ -171,3 +171,52 @@ target delivery.
 A missed live event is replaced by the next current tick. NS-013 owns the AWS
 resources, versions, aliases, asynchronous invocation settings, IAM resources,
 log retention, and alarms; this change does not create them.
+
+## Scheduled nflverse reconciliation
+
+`.github/workflows/reconcile-ratings.yml` runs every six hours at minute 37 UTC.
+The offset is intentional: GitHub notes that scheduled workflows can be delayed
+or dropped during periods of high load near the top of an hour. The workflow
+also supports manual `due`, `correction`, and `verify` runs. Use `correction`
+for all confirmed final games, or pass one final ESPN game ID for a targeted
+repair. Use `verify` before a season starts to load and validate nflverse
+schedule and play data without reading or writing DynamoDB.
+
+Normal reconciliation selects due unconfirmed final games from the existing
+`season-schedule-index` query before downloading a season. Initial eligibility
+is six hours after the provisional calculation, or six hours after the durable
+final observation when no provisional calculation exists. A later source
+failure is retried after 6 hours, 12 hours, then 24 hours (capped at 24 hours).
+A due item more than 18 hours beyond its initial eligibility raises a workflow
+failure and a GitHub error annotation. Later retry times do not reset that
+overdue clock. Routine not-ready retries are successful unless they are
+overdue.
+Confirmed ratings are never downgraded; correction runs preserve a confirmed
+rating when source validation fails.
+
+The staging environment uses these repository or environment variables:
+
+- `NOSPOIL_GAMES_TABLE`: required for `due` and `correction`.
+- `NOSPOIL_SCHEDULE_INDEX`: optional index name; defaults to
+  `season-schedule-index`.
+- `NOSPOIL_RECONCILE_ROLE_ARN`: required AWS role ARN for `due` and
+  `correction`.
+- `NOSPOIL_AWS_REGION`: required AWS region for `due` and `correction`.
+- `NOSPOIL_NFLVERSE_TIMEOUT_SECONDS`: optional source timeout greater than 0
+  and no more than 60 seconds; the default is 20 seconds.
+
+The workflow uses GitHub OIDC and short-lived AWS credentials. It does not use
+long-lived access keys or repository secrets. The eventual least-privilege
+staging role needs only `dynamodb:Query` on this table's season-schedule index
+and `dynamodb:GetItem` and `dynamodb:UpdateItem` on the games table. Its trust
+policy must restrict the OIDC audience to `sts.amazonaws.com` and the subject
+to this repository's `staging` environment (`repo:<OWNER>/<REPO>:environment:staging`;
+replace the placeholders during NS-013 provisioning). NS-013 provisions the
+role, trust policy, table permissions, variables, and alarms; NS-009 creates no
+infrastructure.
+
+GitHub can automatically disable scheduled workflows in public repositories
+after 60 days without repository activity. Re-enable the workflow in GitHub
+and run manual `verify` before relying on the next scheduled run. See the
+[GitHub scheduled workflow documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
+and [workflow enable/disable documentation](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
