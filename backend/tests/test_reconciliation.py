@@ -383,6 +383,27 @@ def test_overdue_uses_initial_eligibility_not_current_retry_due() -> None:
     assert repository.games[game.game_id].rating.state is RatingState.CONFIRMED
 
 
+def test_overdue_future_retry_is_reported_without_source_download() -> None:
+    game = replace(
+        make_game("one", final_at=NOW - timedelta(hours=25)),
+        confirmation_retry=RatingRetry(
+            attempt_count=1,
+            next_attempt_at=NOW + timedelta(hours=1),
+            last_error="nflverse_plays_not_ready",
+        ),
+    )
+    repository = FakeRepository((game,))
+    schedule, plays = source_for((game,))
+
+    result = service(repository, schedule, plays).run_due(2026, now=NOW)
+
+    assert result.overdue == 1
+    assert result.selected == 0
+    assert result.downloads == 0
+    assert schedule.calls == []
+    assert plays.calls == []
+
+
 def test_correction_source_failure_marks_manual_attention_and_keeps_rating() -> None:
     game = make_game("one", rating=confirmed_rating())
     repository = FakeRepository((game,))

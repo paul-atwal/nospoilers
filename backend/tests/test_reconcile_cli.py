@@ -132,3 +132,87 @@ def test_routine_due_retry_is_success_without_attention_conditions(
     output = capsys.readouterr().out
     assert '"ok":true' in output
     assert "::error::" not in output
+
+
+def test_scheduled_due_run_checks_current_and_prior_seasons(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
+
+    class FakeBoto3:
+        def resource(self, name: str) -> object:
+            return SimpleNamespace(Table=lambda table_name: object())
+
+    monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())
+    calls: list[int] = []
+
+    def build_service(repository, schedule_provider, play_provider):
+        def run(season, *, now, mode, game_id):
+            calls.append(season)
+            if season == 2025:
+                return ReconciliationResult(selected=1, downloads=1)
+            return ReconciliationResult()
+
+        return SimpleNamespace(run=run)
+
+    assert main(["--mode", "due"], clock=lambda: datetime(2026, 3, 1, tzinfo=UTC), service_factory=build_service) == 0
+
+    payload = json.loads(capsys.readouterr().out.splitlines()[0])
+    assert calls == [2026, 2025]
+    assert payload["seasons"] == [2026, 2025]
+    assert payload["selected"] == 1
+    assert payload["downloads"] == 1
+
+
+def test_scheduled_due_run_loads_each_due_season_once(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
+
+    class FakeBoto3:
+        def resource(self, name: str) -> object:
+            return SimpleNamespace(Table=lambda table_name: object())
+
+    monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())
+    calls: list[int] = []
+
+    def build_service(repository, schedule_provider, play_provider):
+        def run(season, *, now, mode, game_id):
+            calls.append(season)
+            return ReconciliationResult(selected=1, downloads=1)
+
+        return SimpleNamespace(run=run)
+
+    assert main(["--mode", "due"], clock=lambda: NOW, service_factory=build_service) == 0
+
+    payload = json.loads(capsys.readouterr().out.splitlines()[0])
+    assert calls == [2026, 2025]
+    assert payload["downloads"] == 2
+
+
+def test_explicit_season_limits_due_run(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
+
+    class FakeBoto3:
+        def resource(self, name: str) -> object:
+            return SimpleNamespace(Table=lambda table_name: object())
+
+    monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())
+    calls: list[int] = []
+
+    def build_service(repository, schedule_provider, play_provider):
+        def run(season, *, now, mode, game_id):
+            calls.append(season)
+            return ReconciliationResult()
+
+        return SimpleNamespace(run=run)
+
+    assert (
+        main(
+            ["--mode", "due", "--season", "2025"],
+            clock=lambda: NOW,
+            service_factory=build_service,
+        )
+        == 0
+    )
+
+    payload = json.loads(capsys.readouterr().out.splitlines()[0])
+    assert calls == [2025]
+    assert payload["season"] == 2025
+    assert "seasons" not in payload
