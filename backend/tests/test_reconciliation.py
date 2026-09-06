@@ -124,12 +124,14 @@ def make_game(
     *,
     final_at: datetime = NOW - timedelta(hours=7),
     rating: GameRating | None = None,
+    season: int = WEEK.season,
 ) -> Game:
+    season_week = SeasonWeek(season, SeasonPhase.REGULAR_SEASON, 1)
     return Game(
         game_id=GameId(game_id),
         espn_id=f"espn-{game_id}",
         nflverse_id=None,
-        season_week=WEEK,
+        season_week=season_week,
         kickoff_at=final_at - timedelta(hours=3),
         home=TeamGameSnapshot("home", "Home", "H", None, None),
         away=TeamGameSnapshot("away", "Away", "A", None, None),
@@ -174,9 +176,10 @@ def source_for(
     empty_plays: set[str] = set(),
     schedule_score: Score | None = FINAL_SCORE,
 ) -> tuple[FakeScheduleProvider, FakePlayProvider]:
+    season_week = games[0].season_week
     schedule_games = tuple(
         NflverseScheduleGame(
-            season_week=WEEK,
+            season_week=season_week,
             nflverse_game_id=NflverseGameId(f"nv-{game.game_id}"),
             espn_id=None if str(game.game_id) in missing else game.espn_id,
             final_score=schedule_score,
@@ -205,8 +208,8 @@ def source_for(
         )
     )
     return (
-        FakeScheduleProvider(NflverseScheduleSeason(2026, schedule_games)),
-        FakePlayProvider(NflversePlaySeason(2026, plays)),
+        FakeScheduleProvider(NflverseScheduleSeason(season_week.season, schedule_games)),
+        FakePlayProvider(NflversePlaySeason(season_week.season, plays)),
     )
 
 

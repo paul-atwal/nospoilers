@@ -16,7 +16,7 @@ on:
           - correction
           - verify
       season:
-        description: NFL season year; empty uses the active season
+        description: Season year; empty checks current and prior seasons for due mode, or the active season for correction and verify
         required: false
         type: string
       game_id:

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 import sys
 from types import SimpleNamespace
 
+from backend.nospoil_nfl.nflverse import NflverseSeason
+from backend.nospoil_nfl.rating.reconciliation import NflverseReconciliationService
 from backend.nospoil_nfl.rating.reconcile import main
 from backend.nospoil_nfl.rating.reconciliation import ReconciliationResult
+from backend.tests.test_reconciliation import FakeRepository, make_game, source_for
 
 
 NOW = datetime(2026, 9, 10, 18, 0, tzinfo=UTC)
@@ -134,55 +137,57 @@ def test_routine_due_retry_is_success_without_attention_conditions(
     assert "::error::" not in output
 
 
-def test_scheduled_due_run_checks_current_and_prior_seasons(monkeypatch, capsys) -> None:
+def test_scheduled_due_run_uses_real_service_for_current_and_prior_seasons(
+    monkeypatch,
+    capsys,
+) -> None:
     monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
+
+    current_time = datetime(2026, 3, 1, 12, tzinfo=UTC)
+    current = make_game("current", final_at=current_time - timedelta(hours=7), season=2026)
+    prior = make_game("prior", final_at=current_time - timedelta(hours=7), season=2025)
+    repository = FakeRepository((current, prior))
+    current_schedule, current_plays = source_for((current,))
+    prior_schedule, prior_plays = source_for((prior,))
+    snapshots = {
+        2026: NflverseSeason(current_schedule.schedule, current_plays.plays),
+        2025: NflverseSeason(prior_schedule.schedule, prior_plays.plays),
+    }
+    loaded: list[int] = []
 
     class FakeBoto3:
         def resource(self, name: str) -> object:
             return SimpleNamespace(Table=lambda table_name: object())
 
     monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())
-    calls: list[int] = []
+    monkeypatch.setattr(
+        "backend.nospoil_nfl.game.dynamodb_repository.DynamoGameRepository",
+        lambda table, *, index_name: repository,
+    )
+
+    def load_season(season: int, **providers: object) -> NflverseSeason:
+        loaded.append(season)
+        return snapshots[season]
 
     def build_service(repository, schedule_provider, play_provider):
-        def run(season, *, now, mode, game_id):
-            calls.append(season)
-            if season == 2025:
-                return ReconciliationResult(selected=1, downloads=1)
-            return ReconciliationResult()
+        return NflverseReconciliationService(
+            repository,
+            schedule_provider,
+            play_provider,
+            calculator=lambda rating_input: 8.0,
+            season_loader=load_season,
+        )
 
-        return SimpleNamespace(run=run)
-
-    assert main(["--mode", "due"], clock=lambda: datetime(2026, 3, 1, tzinfo=UTC), service_factory=build_service) == 0
+    assert main(
+        ["--mode", "due"],
+        clock=lambda: current_time,
+        service_factory=build_service,
+    ) == 0
 
     payload = json.loads(capsys.readouterr().out.splitlines()[0])
-    assert calls == [2026, 2025]
+    assert loaded == [2026, 2025]
     assert payload["seasons"] == [2026, 2025]
-    assert payload["selected"] == 1
-    assert payload["downloads"] == 1
-
-
-def test_scheduled_due_run_loads_each_due_season_once(monkeypatch, capsys) -> None:
-    monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
-
-    class FakeBoto3:
-        def resource(self, name: str) -> object:
-            return SimpleNamespace(Table=lambda table_name: object())
-
-    monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())
-    calls: list[int] = []
-
-    def build_service(repository, schedule_provider, play_provider):
-        def run(season, *, now, mode, game_id):
-            calls.append(season)
-            return ReconciliationResult(selected=1, downloads=1)
-
-        return SimpleNamespace(run=run)
-
-    assert main(["--mode", "due"], clock=lambda: NOW, service_factory=build_service) == 0
-
-    payload = json.loads(capsys.readouterr().out.splitlines()[0])
-    assert calls == [2026, 2025]
+    assert payload["selected"] == 2
     assert payload["downloads"] == 2
 
 
