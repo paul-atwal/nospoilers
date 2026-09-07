@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 import json
 import logging
@@ -15,9 +15,11 @@ from ..game import (
     GameRating,
     GameState,
     GameStatus,
+    LiveFinalizationUpdate,
     LiveStatusUpdate,
     RatingRetry,
     RatingState,
+    RecordSnapshot,
     ScheduleUpdate,
     SeasonPhase,
     SeasonWeek,
@@ -391,15 +393,54 @@ class ScheduleSyncService:
             include_status=True,
         )
         any_applied = False
+        finalization = None
+        finalization_applied = False
+        schedule_update = None
         if live_status is not None:
-            live_result = self._repository.apply_live_status(
-                current,
-                LiveStatusUpdate(
+            if live_status.state is GameState.FINAL:
+                # Prepare records from the pre-final current snapshot.  The
+                # final status is not durable until these values can be
+                # committed with it.
+                schedule_update, _, _ = _schedule_update(
+                    season_week,
+                    observed_at,
+                    observation,
+                    current,
+                    {},
+                    include_status=False,
+                )
+                # Final preparation always resolves omitted source records to
+                # either a saved/derived snapshot or None.  UNSET is reserved
+                # for non-final schedule updates.
+                assert schedule_update.home.pregame_record is not UNSET
+                assert schedule_update.home.postgame_record is not UNSET
+                assert schedule_update.away.pregame_record is not UNSET
+                assert schedule_update.away.postgame_record is not UNSET
+                finalization = LiveFinalizationUpdate(
                     game_id=current.game_id,
                     observed_at=observed_at,
                     status=live_status,
-                ),
-            )
+                    home_team_id=schedule_update.home.team_id,
+                    away_team_id=schedule_update.away.team_id,
+                    home_pregame_record=schedule_update.home.pregame_record,
+                    home_postgame_record=schedule_update.home.postgame_record,
+                    away_pregame_record=schedule_update.away.pregame_record,
+                    away_postgame_record=schedule_update.away.postgame_record,
+                )
+                live_result = self._repository.apply_live_finalization(
+                    current,
+                    finalization,
+                )
+                finalization_applied = live_result is WriteResult.APPLIED
+            else:
+                live_result = self._repository.apply_live_status(
+                    current,
+                    LiveStatusUpdate(
+                        game_id=current.game_id,
+                        observed_at=observed_at,
+                        status=live_status,
+                    ),
+                )
             if live_result is WriteResult.APPLIED:
                 any_applied = True
             else:
@@ -409,7 +450,11 @@ class ScheduleSyncService:
                     "info",
                     "stale_or_duplicate_write",
                     game_id=str(current.game_id),
-                    write_type="live_status",
+                    write_type=(
+                        "live_finalization"
+                        if finalization is not None
+                        else "live_status"
+                    ),
                 )
         if rejected:
             counts.rejected_transitions += 1
@@ -434,14 +479,75 @@ class ScheduleSyncService:
         latest = self._repository.get(current.game_id)
         if latest is None:
             raise RuntimeError("game disappeared during live sync")
-        schedule_update, _, _ = _schedule_update(
-            season_week,
-            observed_at,
-            observation,
-            latest,
-            {},
-            include_status=False,
+        prepared_team_ids_match = (
+            schedule_update is not None
+            and latest.home.team_id == schedule_update.home.team_id
+            and latest.away.team_id == schedule_update.away.team_id
         )
+        if (
+            finalization_applied
+            and latest.status.state is GameState.FINAL
+            and prepared_team_ids_match
+        ):
+            # Record fields are already part of the atomic finalization.
+            # Keep this follow-up limited to schedule metadata and team
+            # display data.
+            assert schedule_update is not None
+            schedule_update = replace(
+                schedule_update,
+                home=replace(
+                    schedule_update.home,
+                    pregame_record=UNSET,
+                    postgame_record=UNSET,
+                ),
+                away=replace(
+                    schedule_update.away,
+                    pregame_record=UNSET,
+                    postgame_record=UNSET,
+                ),
+            )
+        else:
+            # Every non-final follow-up must be prepared from the strong
+            # reread.  A pre-live update can describe an old record snapshot
+            # and clear fields committed by a concurrent finalization.
+            schedule_update, _, _ = _schedule_update(
+                season_week,
+                observed_at,
+                observation,
+                latest,
+                {},
+                include_status=False,
+            )
+            if finalization is not None:
+                if latest.status.state is GameState.FINAL:
+                    # Another writer won finalization.  Do not let this
+                    # observation overwrite its record snapshots.
+                    schedule_update = replace(
+                        schedule_update,
+                        home=replace(
+                            schedule_update.home,
+                            pregame_record=UNSET,
+                            postgame_record=UNSET,
+                        ),
+                        away=replace(
+                            schedule_update.away,
+                            pregame_record=UNSET,
+                            postgame_record=UNSET,
+                        ),
+                    )
+                else:
+                    # A finalization attempt did not win.  Keep final-only
+                    # records out of a non-final follow-up.
+                    schedule_update = replace(
+                        schedule_update,
+                        home=replace(schedule_update.home, postgame_record=UNSET),
+                        away=replace(schedule_update.away, postgame_record=UNSET),
+                    )
+        if not prepared_team_ids_match:
+            schedule_update = _materialize_stable_team_records(
+                schedule_update,
+                latest,
+            )
         schedule_result = self._repository.apply_schedule(latest, schedule_update)
         if schedule_result is WriteResult.APPLIED:
             any_applied = True
@@ -581,8 +687,8 @@ def _new_game(
 
 def _new_team(
     source: ScheduleTeam,
-    pregame: object,
-    postgame: object,
+    pregame: RecordSnapshot | None,
+    postgame: RecordSnapshot | None,
 ) -> TeamGameSnapshot:
     return TeamGameSnapshot(
         team_id=source.team_id,
@@ -673,7 +779,7 @@ def _schedule_status(
 ) -> tuple[GameStatus | None, bool, bool]:
     if not include_status:
         return None, False, False
-    if can_transition_game_state(current.status, observation.status.state):
+    if can_transition_game_state(current.status, observation.status):
         return observation.status, False, False
     if (
         current.status.state is GameState.DELAYED
@@ -703,6 +809,40 @@ def _saved_team_by_id(current: Game, team_id: str) -> TeamGameSnapshot | None:
         if team.team_id == team_id:
             return team
     return None
+
+
+def _materialize_stable_team_records(
+    update: ScheduleUpdate,
+    latest: Game,
+) -> ScheduleUpdate:
+    """Fill masked records from the latest team snapshot by stable ID."""
+    return replace(
+        update,
+        home=_materialize_stable_records(update.home, latest),
+        away=_materialize_stable_records(update.away, latest),
+    )
+
+
+def _materialize_stable_records(
+    update: TeamScheduleUpdate,
+    latest: Game,
+) -> TeamScheduleUpdate:
+    saved_team = _saved_team_by_id(latest, update.team_id)
+    if saved_team is None:
+        return update
+    return replace(
+        update,
+        pregame_record=(
+            saved_team.pregame_record
+            if update.pregame_record is UNSET
+            else update.pregame_record
+        ),
+        postgame_record=(
+            saved_team.postgame_record
+            if update.postgame_record is UNSET
+            else update.postgame_record
+        ),
+    )
 
 
 def _needs_scoreboard_check(game: Game, now: datetime) -> bool:

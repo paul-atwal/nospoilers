@@ -45,11 +45,11 @@ _GAME_PHASES = {
     "CON": SeasonPhase.POSTSEASON,
     "SB": SeasonPhase.POSTSEASON,
 }
-_POSTSEASON_WEEKS = {
-    "WC": (19, 1),
-    "DIV": (20, 2),
-    "CON": (21, 3),
-    "SB": (22, 5),
+_POSTSEASON_ROUNDS = {
+    "WC": 1,
+    "DIV": 2,
+    "CON": 3,
+    "SB": 5,
 }
 
 
@@ -169,14 +169,7 @@ def _normalize_row(
         raise _data_error(f"unsupported nflverse game_type: {game_type}") from exc
 
     source_week = _positive_int(row.get("week"), "schedule.week")
-    if game_type in _POSTSEASON_WEEKS:
-        expected_source_week, week = _POSTSEASON_WEEKS[game_type]
-        if source_week != expected_source_week:
-            raise _data_error(
-                f"nflverse {game_type} week must be {expected_source_week}"
-            )
-    else:
-        week = source_week
+    week = _POSTSEASON_ROUNDS.get(game_type, source_week)
     game_id = _text(row.get("game_id"), "schedule.game_id")
     espn_id = _optional_identifier(row.get("espn"), "schedule.espn")
     home_score = _optional_score(row.get("home_score"), "schedule.home_score")

@@ -37,6 +37,7 @@ from .repository import (
 )
 from .rules import can_transition_game_state
 from .updates import (
+    LiveFinalizationUpdate,
     LiveStatusUpdate,
     ScheduleUpdate,
     TeamScheduleUpdate,
@@ -158,7 +159,7 @@ class DynamoGameRepository(GameRepository):
         proposed = self._scheduled_game(current, update)
         status_changed = proposed.status != current.status
         if status_changed:
-            if not can_transition_game_state(current.status, proposed.status.state):
+            if not can_transition_game_state(current.status, proposed.status):
                 raise DomainValidationError("schedule update has an invalid status transition")
             if (
                 current.live_source_checked_at is not None
@@ -209,6 +210,13 @@ class DynamoGameRepository(GameRepository):
         if current.game_id != update.game_id:
             raise DomainValidationError("live update game_id must match current game")
         if (
+            update.status.state is GameState.FINAL
+            and current.status.state is not GameState.FINAL
+        ):
+            raise DomainValidationError(
+                "live final status requires apply_live_finalization"
+            )
+        if (
             current.live_source_checked_at is not None
             and update.observed_at <= current.live_source_checked_at
         ):
@@ -217,7 +225,7 @@ class DynamoGameRepository(GameRepository):
         status_changed = update.status != current.status
         if status_changed and not can_transition_game_state(
             current.status,
-            update.status.state,
+            update.status,
         ):
             raise DomainValidationError("live update has an invalid status transition")
 
@@ -233,6 +241,55 @@ class DynamoGameRepository(GameRepository):
         )
         try:
             self._update_live_status_item(current, proposed, status_changed)
+        except _StaleWrite:
+            return WriteResult.STALE
+        return WriteResult.APPLIED
+
+    def apply_live_finalization(
+        self,
+        current: Game,
+        update: LiveFinalizationUpdate,
+    ) -> WriteResult:
+        """Atomically persist a final live status and prepared records."""
+        if not isinstance(current, Game):
+            raise DomainValidationError("current must be a Game")
+        if not isinstance(update, LiveFinalizationUpdate):
+            raise DomainValidationError("update must be a LiveFinalizationUpdate")
+        if current.game_id != update.game_id:
+            raise DomainValidationError("live finalization game_id must match current game")
+        if current.status.state is GameState.FINAL:
+            return WriteResult.STALE
+        if (
+            update.home_team_id != current.home.team_id
+            or update.away_team_id != current.away.team_id
+        ):
+            return WriteResult.STALE
+        if not can_transition_game_state(current.status, update.status):
+            raise DomainValidationError("live finalization has an invalid status transition")
+        if (
+            current.live_source_checked_at is not None
+            and update.observed_at <= current.live_source_checked_at
+        ):
+            return WriteResult.STALE
+
+        proposed = replace(
+            current,
+            status=update.status,
+            home=replace(
+                current.home,
+                pregame_record=update.home_pregame_record,
+                postgame_record=update.home_postgame_record,
+            ),
+            away=replace(
+                current.away,
+                pregame_record=update.away_pregame_record,
+                postgame_record=update.away_postgame_record,
+            ),
+            live_source_checked_at=update.observed_at,
+            live_state_updated_at=update.observed_at,
+        )
+        try:
+            self._update_live_finalization_item(current, proposed)
         except _StaleWrite:
             return WriteResult.STALE
         return WriteResult.APPLIED
@@ -565,11 +622,13 @@ class DynamoGameRepository(GameRepository):
         names.update(
             {
                 "#game_id": "game_id",
+                "#status": "status",
                 "#schedule_checked_at": "schedule_checked_at",
             }
         )
         values: dict[str, object] = {
             ":expected_schedule_checked_at": current_item["schedule_checked_at"],
+            ":expected_status": current_item["status"],
         }
         set_terms: list[str] = []
         for index, (field_name, value) in enumerate(set_fields.items()):
@@ -580,11 +639,9 @@ class DynamoGameRepository(GameRepository):
         condition_terms = [
             "attribute_exists(#game_id)",
             "#schedule_checked_at = :expected_schedule_checked_at",
+            "#status = :expected_status",
         ]
         if status_changed:
-            names["#status"] = "status"
-            values[":expected_status"] = current_item["status"]
-            condition_terms.append("#status = :expected_status")
             if current.live_source_checked_at is None:
                 names["#live_source_checked_at"] = "live_source_checked_at"
                 condition_terms.append("attribute_not_exists(#live_source_checked_at)")
@@ -674,6 +731,93 @@ class DynamoGameRepository(GameRepository):
             raise GameRepositoryError("could not update game status in DynamoDB") from error
         except BotoCoreError as error:
             raise GameRepositoryError("could not update game status in DynamoDB") from error
+
+    def _update_live_finalization_item(self, current: Game, proposed: Game) -> None:
+        """Conditionally commit final status, freshness, ownership, and records."""
+        current_item = self._codec.encode(current)
+        proposed_item = self._codec.encode(proposed)
+        set_fields = {
+            "status": proposed_item["status"],
+            "live_source_checked_at": proposed_item["live_source_checked_at"],
+            "live_state_updated_at": proposed_item["live_state_updated_at"],
+        }
+        remove_fields: list[str] = []
+        for team_name in ("home", "away"):
+            for record_name in ("pregame_record", "postgame_record"):
+                path = f"{team_name}.{record_name}"
+                value = proposed_item[team_name].get(record_name)
+                if value is None:
+                    remove_fields.append(path)
+                else:
+                    set_fields[path] = value
+
+        names = {
+            "#game_id": "game_id",
+            "#status": "status",
+            "#live_source_checked_at": "live_source_checked_at",
+            "#live_state_updated_at": "live_state_updated_at",
+            "#home": "home",
+            "#away": "away",
+            "#team_id": "team_id",
+            "#pregame_record": "pregame_record",
+            "#postgame_record": "postgame_record",
+            "#schedule_checked_at": "schedule_checked_at",
+        }
+        values: dict[str, object] = {
+            ":expected_status": current_item["status"],
+            ":expected_schedule_checked_at": current_item["schedule_checked_at"],
+            ":expected_home_team_id": current_item["home"]["team_id"],
+            ":expected_away_team_id": current_item["away"]["team_id"],
+        }
+        if current.live_source_checked_at is not None:
+            values[":expected_live_source_checked_at"] = current_item[
+                "live_source_checked_at"
+            ]
+
+        def path_expression(path: str) -> str:
+            return ".".join(f"#{part}" for part in path.split("."))
+
+        set_terms: list[str] = []
+        for index, (path, value) in enumerate(set_fields.items()):
+            value_name = f":set_{index}"
+            values[value_name] = value
+            set_terms.append(f"{path_expression(path)} = {value_name}")
+        remove_terms = [path_expression(path) for path in remove_fields]
+        expression_parts = [f"SET {', '.join(set_terms)}"]
+        if remove_terms:
+            expression_parts.append(f"REMOVE {', '.join(remove_terms)}")
+
+        condition_terms = [
+            "attribute_exists(#game_id)",
+            "#status = :expected_status",
+            "#schedule_checked_at = :expected_schedule_checked_at",
+            "#home.#team_id = :expected_home_team_id",
+            "#away.#team_id = :expected_away_team_id",
+        ]
+        if current.live_source_checked_at is None:
+            condition_terms.append("attribute_not_exists(#live_source_checked_at)")
+        else:
+            condition_terms.append(
+                "#live_source_checked_at = :expected_live_source_checked_at"
+            )
+        try:
+            self._table.update_item(
+                Key={"game_id": str(current.game_id)},
+                UpdateExpression=" ".join(expression_parts),
+                ConditionExpression=" AND ".join(condition_terms),
+                ExpressionAttributeNames=names,
+                ExpressionAttributeValues=values,
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                raise _StaleWrite from error
+            raise GameRepositoryError(
+                "could not update final game and records in DynamoDB"
+            ) from error
+        except BotoCoreError as error:
+            raise GameRepositoryError(
+                "could not update final game and records in DynamoDB"
+            ) from error
 
     def _update_rating_item(self, current: Game, rating: GameRating) -> None:
         """Conditionally replace one rating map for an unchanged final game."""

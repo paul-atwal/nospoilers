@@ -15,6 +15,7 @@ from ..game import (
     TeamRecord,
     UNSET,
 )
+from ..game.updates import _Unset
 
 
 class TeamResult(StrEnum):
@@ -36,8 +37,8 @@ class TeamSide(StrEnum):
 class PreparedRecords:
     """Explicit record fields for a new game or schedule update."""
 
-    pregame: object
-    postgame: object
+    pregame: RecordSnapshot | None
+    postgame: RecordSnapshot | None | _Unset
 
 
 def results_by_team(
@@ -112,7 +113,7 @@ def prepare_team_records(
         return PreparedRecords(pregame=pregame or adjusted, postgame=adjusted)
 
     pregame = saved_pregame if has_started and saved_pregame is not None else adjusted
-    postgame: object = UNSET if saved_team is not None else None
+    postgame: RecordSnapshot | None | _Unset = UNSET if saved_team is not None else None
     return PreparedRecords(pregame=pregame, postgame=postgame)
 
 

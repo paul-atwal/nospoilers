@@ -9,6 +9,7 @@ from enum import StrEnum
 from .models import (
     DomainValidationError,
     GameId,
+    GameState,
     GameStatus,
     OddsSnapshot,
     RecordSnapshot,
@@ -123,7 +124,48 @@ class LiveStatusUpdate:
             raise DomainValidationError("status must be a GameStatus")
 
 
+@dataclass(frozen=True, slots=True)
+class LiveFinalizationUpdate:
+    """One final live observation with the records it owns.
+
+    The repository applies this value as one conditional update.  ``None`` is
+    explicit: it removes the corresponding stored record field, which is
+    required for postseason games whose records remain static.
+    """
+
+    game_id: GameId
+    observed_at: datetime
+    status: GameStatus
+    home_team_id: str
+    away_team_id: str
+    home_pregame_record: RecordSnapshot | None
+    home_postgame_record: RecordSnapshot | None
+    away_pregame_record: RecordSnapshot | None
+    away_postgame_record: RecordSnapshot | None
+
+    def __post_init__(self) -> None:
+        _require_text("game_id", self.game_id)
+        _require_utc("observed_at", self.observed_at)
+        if not isinstance(self.status, GameStatus):
+            raise DomainValidationError("status must be a GameStatus")
+        if self.status.state is not GameState.FINAL:
+            raise DomainValidationError("live finalization requires a final status")
+        _require_text("home_team_id", self.home_team_id)
+        _require_text("away_team_id", self.away_team_id)
+        if self.home_team_id == self.away_team_id:
+            raise DomainValidationError("home and away teams must be different")
+        for name, record in (
+            ("home_pregame_record", self.home_pregame_record),
+            ("home_postgame_record", self.home_postgame_record),
+            ("away_pregame_record", self.away_pregame_record),
+            ("away_postgame_record", self.away_postgame_record),
+        ):
+            if record is not None and not isinstance(record, RecordSnapshot):
+                raise DomainValidationError(f"{name} must be a RecordSnapshot or None")
+
+
 __all__ = [
+    "LiveFinalizationUpdate",
     "LiveStatusUpdate",
     "ScheduleUpdate",
     "TeamScheduleUpdate",

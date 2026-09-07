@@ -6,8 +6,10 @@ from argparse import ArgumentParser, ArgumentTypeError, Namespace
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 import json
+import logging
 import math
 import os
+import sys
 from typing import Callable, Sequence
 
 from ..nflverse import load_nflverse_season
@@ -34,6 +36,7 @@ def main(
     ),
 ) -> int:
     """Run one reconciliation mode and return a process exit code."""
+    logger = _configure_application_logging()
     args = _parse_args(argv)
     now = (clock or (lambda: datetime.now(UTC)))()
     try:
@@ -96,7 +99,17 @@ def main(
         )
         _publish(payload, attention=_result_attention(result))
         return _exit_code(result)
-    except ProviderError:
+    except ProviderError as error:
+        _log_failure(
+            logger,
+            {
+                "error_code": "source_failure",
+                "exception_type": type(error).__name__,
+                "provider": getattr(error, "provider", None),
+                "operation": getattr(error, "operation", None),
+                "message": str(error) or "provider failure",
+            },
+        )
         payload = {
             "mode": args.mode,
             "season": report_season,
@@ -106,6 +119,16 @@ def main(
         _publish(payload, attention="source failure")
         return 1
     except Exception as error:
+        _log_failure(
+            logger,
+            {
+                "error_code": _safe_error(error),
+                "exception_type": type(error).__name__,
+                "provider": getattr(error, "provider", None),
+                "operation": getattr(error, "operation", None),
+                "message": str(error) or "execution failure",
+            },
+        )
         payload = {
             "mode": args.mode,
             "season": report_season,
@@ -131,6 +154,44 @@ def _parse_args(argv: Sequence[str] | None) -> Namespace:
     if args.game_id is not None and not args.game_id.strip():
         parser.error("--game-id must be non-empty text")
     return args
+
+
+def _configure_application_logging() -> logging.Logger:
+    """Install one INFO stderr handler for the application namespace."""
+    logger_name = __package__.rsplit(".", 1)[0]
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    owned = next(
+        (
+            handler
+            for handler in logger.handlers
+            if getattr(handler, "_nospoil_reconcile", False)
+        ),
+        None,
+    )
+    if owned is None:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setLevel(logging.INFO)
+        handler._nospoil_reconcile = True  # type: ignore[attr-defined]
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(handler)
+    else:
+        # Test runners and scheduled wrappers may replace stderr between calls.
+        # Avoid retaining a closed capture stream while keeping one handler.
+        owned.stream = sys.stderr
+    return logger
+
+
+def _log_failure(logger: logging.Logger, fields: dict[str, object]) -> None:
+    logger.error(
+        json.dumps(
+            {"event": "nflverse_cli_failed", **fields},
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        exc_info=True,
+    )
 
 
 def _result_payload(
