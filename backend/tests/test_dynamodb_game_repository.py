@@ -205,7 +205,12 @@ def live_finalization_update(
     )
 
 
-def live_observation(game: Game, *, observed_at: datetime) -> ScoreboardBatch:
+def live_observation(
+    game: Game,
+    *,
+    observed_at: datetime,
+    include_records: bool = True,
+) -> ScoreboardBatch:
     final = GameStatus(GameState.FINAL, score=Score(home=24, away=17))
     return ScoreboardBatch(
         observed_at=observed_at,
@@ -218,13 +223,21 @@ def live_observation(game: Game, *, observed_at: datetime) -> ScoreboardBatch:
                     team_id=game.home.team_id,
                     display_name=game.home.display_name,
                     abbreviation=game.home.abbreviation,
-                    record=make_record(2, 0, snapshot_at=observed_at),
+                    record=(
+                        make_record(2, 0, snapshot_at=observed_at)
+                        if include_records
+                        else None
+                    ),
                 ),
                 away=ScheduleTeam(
                     team_id=game.away.team_id,
                     display_name=game.away.display_name,
                     abbreviation=game.away.abbreviation,
-                    record=make_record(0, 2, snapshot_at=observed_at),
+                    record=(
+                        make_record(0, 2, snapshot_at=observed_at)
+                        if include_records
+                        else None
+                    ),
                 ),
                 status=final,
             ),
@@ -701,15 +714,43 @@ def test_schedule_write_prepared_before_finalization_loses_status_race(
     original = make_game("401000003")
     assert repository.create_if_absent(original) is True
     final_status = GameStatus(GameState.FINAL, score=Score(home=24, away=17))
+    home_postgame = make_record(
+        2,
+        0,
+        snapshot_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
+    )
+    away_postgame = make_record(
+        0,
+        2,
+        snapshot_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
+    )
+    stale_home = TeamScheduleUpdate(
+        team_id=original.home.team_id,
+        display_name=original.home.display_name,
+        abbreviation=original.home.abbreviation,
+        pregame_record=None,
+        postgame_record=None,
+    )
+    stale_away = TeamScheduleUpdate(
+        team_id=original.away.team_id,
+        display_name=original.away.display_name,
+        abbreviation=original.away.abbreviation,
+        pregame_record=None,
+        postgame_record=None,
+    )
     stale_schedule = schedule_update(
         original,
         observed_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
+        home=stale_home,
+        away=stale_away,
         broadcaster="stale schedule",
     )
     final_update = live_finalization_update(
         original,
         observed_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
         status=final_status,
+        home_postgame_record=home_postgame,
+        away_postgame_record=away_postgame,
     )
 
     assert repository.apply_live_finalization(original, final_update) is WriteResult.APPLIED
@@ -717,6 +758,8 @@ def test_schedule_write_prepared_before_finalization_loses_status_race(
     stored = repository.get(original.game_id)
     assert stored is not None
     assert stored.status == final_status
+    assert stored.home.postgame_record == home_postgame
+    assert stored.away.postgame_record == away_postgame
 
 
 def test_finalization_prepared_before_schedule_loses_schedule_race(
@@ -881,6 +924,48 @@ def test_real_service_keeps_postseason_records_static(game_table: object) -> Non
     assert stored.home.pregame_record == pregame
     assert stored.home.postgame_record is None
     assert stored.away.postgame_record is None
+    assert result.provisional_rating_game_ids == (current.game_id,)
+
+
+def test_real_service_derives_regular_postgame_records_when_source_omits_records(
+    game_table: object,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    observed_at = datetime(2026, 9, 10, 19, 0, tzinfo=UTC)
+    home_pregame = make_record(1, 0, snapshot_at=CHECKED_AT)
+    away_pregame = make_record(0, 1, snapshot_at=CHECKED_AT)
+    current = replace(
+        make_game("401000008"),
+        home=replace(make_team("home-401000008"), pregame_record=home_pregame),
+        away=replace(make_team("away-401000008"), pregame_record=away_pregame),
+    )
+    assert repository.create_if_absent(current) is True
+    batch = live_observation(
+        current,
+        observed_at=observed_at,
+        include_records=False,
+    )
+
+    class Provider:
+        def fetch_scoreboard(self, season_week: SeasonWeek | None = None) -> ScoreboardBatch:
+            return batch
+
+    result = ScheduleSyncService(repository, Provider()).run(
+        SyncEvent(SyncMode.LIVE_TICK, observed_at, current.season_week.season),
+        now=observed_at,
+    )
+
+    stored = repository.get(current.game_id)
+    assert stored is not None
+    assert stored.status.state is GameState.FINAL
+    assert stored.home.pregame_record == home_pregame
+    assert stored.away.pregame_record == away_pregame
+    assert stored.home.postgame_record is not None
+    assert stored.home.postgame_record.record == TeamRecord(2, 0)
+    assert stored.home.postgame_record.snapshot_at == observed_at
+    assert stored.away.postgame_record is not None
+    assert stored.away.postgame_record.record == TeamRecord(0, 2)
+    assert stored.away.postgame_record.snapshot_at == observed_at
     assert result.provisional_rating_game_ids == (current.game_id,)
 
 

@@ -38,7 +38,6 @@ from ..providers import (
 )
 from .models import SyncEvent, SyncMode, SyncResult
 from .records import TeamResult, TeamSide, prepare_team_records, results_by_team
-from ..game.updates import _Unset
 
 
 NEAR_TERM_WEEK_COUNT = 3
@@ -408,28 +407,23 @@ class ScheduleSyncService:
                 include_status=False,
             )
             if live_status.state is GameState.FINAL:
+                # Final preparation always resolves omitted source records to
+                # either a saved/derived snapshot or None.  UNSET is reserved
+                # for non-final schedule updates.
+                assert schedule_update.home.pregame_record is not UNSET
+                assert schedule_update.home.postgame_record is not UNSET
+                assert schedule_update.away.pregame_record is not UNSET
+                assert schedule_update.away.postgame_record is not UNSET
                 finalization = LiveFinalizationUpdate(
                     game_id=current.game_id,
                     observed_at=observed_at,
                     status=live_status,
                     home_team_id=schedule_update.home.team_id,
                     away_team_id=schedule_update.away.team_id,
-                    home_pregame_record=_record_value(
-                        schedule_update.home.pregame_record,
-                        current.home.pregame_record,
-                    ),
-                    home_postgame_record=_record_value(
-                        schedule_update.home.postgame_record,
-                        current.home.postgame_record,
-                    ),
-                    away_pregame_record=_record_value(
-                        schedule_update.away.pregame_record,
-                        current.away.pregame_record,
-                    ),
-                    away_postgame_record=_record_value(
-                        schedule_update.away.postgame_record,
-                        current.away.postgame_record,
-                    ),
+                    home_pregame_record=schedule_update.home.pregame_record,
+                    home_postgame_record=schedule_update.home.postgame_record,
+                    away_pregame_record=schedule_update.away.pregame_record,
+                    away_postgame_record=schedule_update.away.postgame_record,
                 )
                 live_result = self._repository.apply_live_finalization(
                     current,
@@ -858,18 +852,6 @@ def _record_write(
     else:
         counts.stale_writes += 1
         _emit(logger, "info", "stale_or_duplicate_write", game_id=str(game_id))
-
-
-def _record_value(
-    value: RecordSnapshot | None | _Unset,
-    saved: RecordSnapshot | None,
-) -> RecordSnapshot | None:
-    """Convert schedule update's explicit UNSET marker for finalization."""
-    if value is UNSET:
-        return saved
-    if value is not None and not isinstance(value, RecordSnapshot):
-        raise TypeError("prepared record must be a RecordSnapshot or None")
-    return value
 
 
 def _add_rating_handoff(
