@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 import pytest
 
-from backend.nospoil_nfl.game.models import SeasonPhase, Score
+from backend.nospoil_nfl.game.models import SeasonPhase, Score, SeasonWeek
 from backend.nospoil_nfl.providers import (
     NflverseScheduleClient,
     NflverseScheduleSeason,
@@ -40,6 +40,12 @@ class PolarsLikeTable:
 
 def load_fixture() -> list[dict[str, Any]]:
     with (FIXTURE_DIR / "nflverse_schedule.json").open() as fixture_file:
+        return json.load(fixture_file)
+
+
+def load_historical_wild_card_fixture() -> list[dict[str, Any]]:
+    fixture_path = FIXTURE_DIR / "nflverse_schedule_2020_wild_card.json"
+    with fixture_path.open() as fixture_file:
         return json.load(fixture_file)
 
 
@@ -78,6 +84,38 @@ def test_loads_one_complete_season_from_a_polars_like_table() -> None:
     assert result.games[0].espn_id == "401671878"
     assert result.games[0].final_score == Score(home=32, away=12)
     assert result.games[3].final_score == Score(home=40, away=22)
+
+
+def test_loads_historical_wild_card_with_regular_season_row() -> None:
+    historical_row = load_historical_wild_card_fixture()[0]
+    regular_row = {
+        "season": 2020,
+        "game_type": "REG",
+        "week": 17,
+        "game_id": "2020_17_BUF_MIA",
+        "espn": "401220498",
+        "home_score": 56,
+        "away_score": 26,
+    }
+
+    result = NflverseScheduleClient(
+        loader=lambda seasons: make_table([historical_row, regular_row])
+    ).load_schedule(2020)
+
+    assert len(result.games) == 2
+    assert result.games[0].season_week == SeasonWeek(
+        season=2020,
+        phase=SeasonPhase.POSTSEASON,
+        week=1,
+    )
+    assert result.games[0].nflverse_game_id == "2020_18_IND_BUF"
+    assert result.games[0].espn_id == "401220393"
+    assert result.games[1].season_week == SeasonWeek(
+        season=2020,
+        phase=SeasonPhase.REGULAR_SEASON,
+        week=17,
+    )
+    assert result.games[1].espn_id == "401220498"
 
 
 def test_load_schedule_accepts_a_pandas_like_table() -> None:

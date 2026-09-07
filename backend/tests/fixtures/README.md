@@ -32,6 +32,12 @@ the two representative 2025 regular-season PBP games. Together with
 `nflverse_play_provider.json`, it verifies the ESPN event ID to nflverse
 `game_id` mapping and local play selection without a source call.
 
+`nflverse_schedule_2020_wild_card.json` is a trimmed row from the official
+pre-2021 nflverse schedule release, captured by the schedule audit. Its Wild
+Card row uses source week 18 (`2020_18_IND_BUF`, ESPN event `401220393`),
+which verifies that `game_type` supplies the postseason round meaning even
+when the source ordinal differs from modern seasons.
+
 ## ESPN scoreboard
 
 `espn_scoreboard_scheduled.json` is a trimmed 2026 Week 1 response captured on
