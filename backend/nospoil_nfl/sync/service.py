@@ -479,7 +479,16 @@ class ScheduleSyncService:
         latest = self._repository.get(current.game_id)
         if latest is None:
             raise RuntimeError("game disappeared during live sync")
-        if finalization_applied and latest.status.state is GameState.FINAL:
+        prepared_team_ids_match = (
+            schedule_update is not None
+            and latest.home.team_id == schedule_update.home.team_id
+            and latest.away.team_id == schedule_update.away.team_id
+        )
+        if (
+            finalization_applied
+            and latest.status.state is GameState.FINAL
+            and prepared_team_ids_match
+        ):
             # Record fields are already part of the atomic finalization.
             # Keep this follow-up limited to schedule metadata and team
             # display data.
@@ -534,6 +543,11 @@ class ScheduleSyncService:
                         home=replace(schedule_update.home, postgame_record=UNSET),
                         away=replace(schedule_update.away, postgame_record=UNSET),
                     )
+        if not prepared_team_ids_match:
+            schedule_update = _materialize_stable_team_records(
+                schedule_update,
+                latest,
+            )
         schedule_result = self._repository.apply_schedule(latest, schedule_update)
         if schedule_result is WriteResult.APPLIED:
             any_applied = True
@@ -795,6 +809,40 @@ def _saved_team_by_id(current: Game, team_id: str) -> TeamGameSnapshot | None:
         if team.team_id == team_id:
             return team
     return None
+
+
+def _materialize_stable_team_records(
+    update: ScheduleUpdate,
+    latest: Game,
+) -> ScheduleUpdate:
+    """Fill masked records from the latest team snapshot by stable ID."""
+    return replace(
+        update,
+        home=_materialize_stable_records(update.home, latest),
+        away=_materialize_stable_records(update.away, latest),
+    )
+
+
+def _materialize_stable_records(
+    update: TeamScheduleUpdate,
+    latest: Game,
+) -> TeamScheduleUpdate:
+    saved_team = _saved_team_by_id(latest, update.team_id)
+    if saved_team is None:
+        return update
+    return replace(
+        update,
+        pregame_record=(
+            saved_team.pregame_record
+            if update.pregame_record is UNSET
+            else update.pregame_record
+        ),
+        postgame_record=(
+            saved_team.postgame_record
+            if update.postgame_record is UNSET
+            else update.postgame_record
+        ),
+    )
 
 
 def _needs_scoreboard_check(game: Game, now: datetime) -> bool:
