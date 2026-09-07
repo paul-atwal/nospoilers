@@ -6,6 +6,7 @@ from argparse import ArgumentParser, ArgumentTypeError, Namespace
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 import json
+import logging
 import math
 import os
 from typing import Callable, Sequence
@@ -34,6 +35,8 @@ def main(
     ),
 ) -> int:
     """Run one reconciliation mode and return a process exit code."""
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger("nospoil_nfl").setLevel(logging.INFO)
     args = _parse_args(argv)
     now = (clock or (lambda: datetime.now(UTC)))()
     try:
@@ -96,7 +99,21 @@ def main(
         )
         _publish(payload, attention=_result_attention(result))
         return _exit_code(result)
-    except ProviderError:
+    except ProviderError as error:
+        logging.getLogger("nospoil_nfl").error(
+            json.dumps(
+                {
+                    "event": "nflverse_cli_failed",
+                    "error_code": "source_failure",
+                    "exception_type": type(error).__name__,
+                    "provider": getattr(error, "provider", None),
+                    "operation": getattr(error, "operation", None),
+                    "message": str(error) or "provider failure",
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
         payload = {
             "mode": args.mode,
             "season": report_season,
@@ -106,6 +123,12 @@ def main(
         _publish(payload, attention="source failure")
         return 1
     except Exception as error:
+        logging.getLogger("nospoil_nfl").exception(
+            "nflverse_cli_failed error_code=%s exception_type=%s message=%s",
+            _safe_error(error),
+            type(error).__name__,
+            str(error) or "execution failure",
+        )
         payload = {
             "mode": args.mode,
             "season": report_season,

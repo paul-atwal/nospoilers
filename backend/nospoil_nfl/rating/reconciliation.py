@@ -24,6 +24,7 @@ from ..nflverse import NflverseGameMappingError, NflverseSeason, load_nflverse_s
 from ..providers.contracts import NFLVersePlayProvider, NFLVerseScheduleProvider
 from ..providers.errors import ProviderError
 from .calculator import calculate_rating
+from .confirmation import confirmation_support, confirmation_work_remains
 from .input import RatingInput, hash_rating_input
 
 
@@ -133,8 +134,7 @@ class NflverseReconciliationService:
             state.overdue = sum(
                 _is_overdue(game, now)
                 for game in games
-                if game.status.state is GameState.FINAL
-                and game.rating.state is not RatingState.CONFIRMED
+                if confirmation_work_remains(game)
             )
         selected = self._select_games(games, now, mode, game_id, state)
         state.selected = len(selected)
@@ -241,17 +241,30 @@ class NflverseReconciliationService:
                         error_code="game_not_final",
                     )
                     return []
+                if selected and not confirmation_support(selected[0].season_week).supported:
+                    state.failures = 1
+                    state.manual_correction_failure = True
+                    self._emit(
+                        "error",
+                        "nflverse_correction_failed",
+                        error_code="unsupported_competition",
+                        reason=confirmation_support(selected[0].season_week).reason,
+                    )
+                    return []
                 return selected
             return [
                 game
                 for game in games
                 if game.status.state is GameState.FINAL
                 and game.rating.state is RatingState.CONFIRMED
+                and confirmation_support(game.season_week).supported
             ]
 
         selected: list[Game] = []
         for game in games:
             if game.status.state is not GameState.FINAL:
+                continue
+            if not confirmation_support(game.season_week).supported:
                 continue
             if game.rating.state is RatingState.CONFIRMED:
                 continue
@@ -269,6 +282,8 @@ class NflverseReconciliationService:
         game_id: GameId | None,
     ) -> bool:
         if current.status.state is not GameState.FINAL:
+            return False
+        if not confirmation_support(current.season_week).supported:
             return False
         if mode == "correction":
             return game_id is not None or current.rating.state is RatingState.CONFIRMED
