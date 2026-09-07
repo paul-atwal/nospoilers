@@ -14,7 +14,12 @@ from .models import (
     SeasonWeek,
 )
 from .rules import can_transition_rating_state
-from .updates import LiveStatusUpdate, ScheduleUpdate, WriteResult
+from .updates import (
+    LiveFinalizationUpdate,
+    LiveStatusUpdate,
+    ScheduleUpdate,
+    WriteResult,
+)
 
 
 class GameRepositoryError(RuntimeError):
@@ -74,6 +79,14 @@ class GameRepository(Protocol):
         update: LiveStatusUpdate,
     ) -> WriteResult:
         """Apply one live-status observation when the current item still matches."""
+        ...
+
+    def apply_live_finalization(
+        self,
+        current: Game,
+        update: LiveFinalizationUpdate,
+    ) -> WriteResult:
+        """Atomically apply a final live status and its prepared records."""
         ...
 
     def apply_rating(self, current: Game, rating: GameRating) -> WriteResult:

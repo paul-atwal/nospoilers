@@ -19,6 +19,7 @@ from backend.nospoil_nfl.game import (
     GameRating,
     GameState,
     GameStatus,
+    LiveFinalizationUpdate,
     LiveStatusUpdate,
     OddsSnapshot,
     RecordScope,
@@ -174,6 +175,29 @@ def live_status_update(
         game_id=game.game_id,
         observed_at=observed_at,
         status=status,
+    )
+
+
+def live_finalization_update(
+    game: Game,
+    *,
+    observed_at: datetime,
+    status: GameStatus,
+    home_pregame_record: RecordSnapshot | None = None,
+    home_postgame_record: RecordSnapshot | None = None,
+    away_pregame_record: RecordSnapshot | None = None,
+    away_postgame_record: RecordSnapshot | None = None,
+) -> LiveFinalizationUpdate:
+    return LiveFinalizationUpdate(
+        game_id=game.game_id,
+        observed_at=observed_at,
+        status=status,
+        home_team_id=game.home.team_id,
+        away_team_id=game.away.team_id,
+        home_pregame_record=home_pregame_record,
+        home_postgame_record=home_postgame_record,
+        away_pregame_record=away_pregame_record,
+        away_postgame_record=away_postgame_record,
     )
 
 
@@ -578,6 +602,50 @@ def test_apply_live_status_rejects_a_write_that_lost_a_live_race(
     assert stored is not None
     assert stored.status == winner_status
     assert stored.live_source_checked_at == datetime(2026, 9, 10, 19, 0, tzinfo=UTC)
+
+
+def test_apply_live_finalization_commits_status_and_records_together(
+    game_table: object,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    original = replace(
+        make_game("401000001"),
+        nflverse_id="2026_01_SEA_DET",
+        broadcaster="ESPN",
+        odds=OddsSnapshot("SEA -3.5", CHECKED_AT),
+        home=replace(make_team("home-401000001"), logo_key="home-logo"),
+    )
+    assert repository.create_if_absent(original) is True
+    final_status = GameStatus(GameState.FINAL, score=Score(home=24, away=17))
+    home_pregame = make_record(1, 0, snapshot_at=CHECKED_AT)
+    home_postgame = make_record(2, 0, snapshot_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC))
+    away_pregame = make_record(0, 1, snapshot_at=CHECKED_AT)
+    away_postgame = make_record(0, 2, snapshot_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC))
+    update = live_finalization_update(
+        original,
+        observed_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
+        status=final_status,
+        home_pregame_record=home_pregame,
+        home_postgame_record=home_postgame,
+        away_pregame_record=away_pregame,
+        away_postgame_record=away_postgame,
+    )
+
+    assert repository.apply_live_finalization(original, update) is WriteResult.APPLIED
+    stored = repository.get(original.game_id)
+    assert stored is not None
+    assert stored.status == final_status
+    assert stored.live_source_checked_at == update.observed_at
+    assert stored.home.pregame_record == home_pregame
+    assert stored.home.postgame_record == home_postgame
+    assert stored.away.pregame_record == away_pregame
+    assert stored.away.postgame_record == away_postgame
+    assert stored.nflverse_id == original.nflverse_id
+    assert stored.rating == original.rating
+    assert stored.broadcaster == original.broadcaster
+    assert stored.odds == original.odds
+
+    assert repository.apply_live_finalization(original, update) is WriteResult.STALE
 
 
 def test_apply_live_status_cannot_replace_a_schedule_status_write(

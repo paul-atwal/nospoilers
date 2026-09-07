@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 import json
 import logging
@@ -15,9 +15,11 @@ from ..game import (
     GameRating,
     GameState,
     GameStatus,
+    LiveFinalizationUpdate,
     LiveStatusUpdate,
     RatingRetry,
     RatingState,
+    RecordSnapshot,
     ScheduleUpdate,
     SeasonPhase,
     SeasonWeek,
@@ -36,6 +38,7 @@ from ..providers import (
 )
 from .models import SyncEvent, SyncMode, SyncResult
 from .records import TeamResult, TeamSide, prepare_team_records, results_by_team
+from ..game.updates import _Unset
 
 
 NEAR_TERM_WEEK_COUNT = 3
@@ -391,15 +394,52 @@ class ScheduleSyncService:
             include_status=True,
         )
         any_applied = False
+        finalization = None
+        schedule_update = None
         if live_status is not None:
-            live_result = self._repository.apply_live_status(
+            # Prepare records from the pre-final current snapshot.  The final
+            # status is not durable until these values can be committed with it.
+            schedule_update, _, _ = _schedule_update(
+                season_week,
+                observed_at,
+                observation,
                 current,
-                LiveStatusUpdate(
+                {},
+                include_status=False,
+            )
+            if live_status.state is GameState.FINAL:
+                finalization = LiveFinalizationUpdate(
                     game_id=current.game_id,
                     observed_at=observed_at,
                     status=live_status,
-                ),
-            )
+                    home_team_id=schedule_update.home.team_id,
+                    away_team_id=schedule_update.away.team_id,
+                    home_pregame_record=_record_value(
+                        schedule_update.home.pregame_record
+                    ),
+                    home_postgame_record=_record_value(
+                        schedule_update.home.postgame_record
+                    ),
+                    away_pregame_record=_record_value(
+                        schedule_update.away.pregame_record
+                    ),
+                    away_postgame_record=_record_value(
+                        schedule_update.away.postgame_record
+                    ),
+                )
+                live_result = self._repository.apply_live_finalization(
+                    current,
+                    finalization,
+                )
+            else:
+                live_result = self._repository.apply_live_status(
+                    current,
+                    LiveStatusUpdate(
+                        game_id=current.game_id,
+                        observed_at=observed_at,
+                        status=live_status,
+                    ),
+                )
             if live_result is WriteResult.APPLIED:
                 any_applied = True
             else:
@@ -409,7 +449,11 @@ class ScheduleSyncService:
                     "info",
                     "stale_or_duplicate_write",
                     game_id=str(current.game_id),
-                    write_type="live_status",
+                    write_type=(
+                        "live_finalization"
+                        if finalization is not None
+                        else "live_status"
+                    ),
                 )
         if rejected:
             counts.rejected_transitions += 1
@@ -434,14 +478,45 @@ class ScheduleSyncService:
         latest = self._repository.get(current.game_id)
         if latest is None:
             raise RuntimeError("game disappeared during live sync")
-        schedule_update, _, _ = _schedule_update(
-            season_week,
-            observed_at,
-            observation,
-            latest,
-            {},
-            include_status=False,
-        )
+        if schedule_update is None:
+            schedule_update, _, _ = _schedule_update(
+                season_week,
+                observed_at,
+                observation,
+                latest,
+                {},
+                include_status=False,
+            )
+        elif finalization is not None:
+            if latest.status.state is GameState.FINAL:
+                # Record fields are already part of the atomic finalization.
+                # Keep this follow-up limited to schedule metadata and team
+                # display data.
+                schedule_update = replace(
+                    schedule_update,
+                    home=replace(
+                        schedule_update.home,
+                        pregame_record=UNSET,
+                        postgame_record=UNSET,
+                    ),
+                    away=replace(
+                        schedule_update.away,
+                        pregame_record=UNSET,
+                        postgame_record=UNSET,
+                    ),
+                )
+            else:
+                # Another writer won the finalization race; prepare against
+                # its current state so a non-final schedule write remains
+                # valid and cannot carry final-only records backward.
+                schedule_update, _, _ = _schedule_update(
+                    season_week,
+                    observed_at,
+                    observation,
+                    latest,
+                    {},
+                    include_status=False,
+                )
         schedule_result = self._repository.apply_schedule(latest, schedule_update)
         if schedule_result is WriteResult.APPLIED:
             any_applied = True
@@ -581,8 +656,8 @@ def _new_game(
 
 def _new_team(
     source: ScheduleTeam,
-    pregame: object,
-    postgame: object,
+    pregame: RecordSnapshot | None,
+    postgame: RecordSnapshot | None,
 ) -> TeamGameSnapshot:
     return TeamGameSnapshot(
         team_id=source.team_id,
@@ -774,6 +849,15 @@ def _record_write(
     else:
         counts.stale_writes += 1
         _emit(logger, "info", "stale_or_duplicate_write", game_id=str(game_id))
+
+
+def _record_value(value: RecordSnapshot | None | _Unset) -> RecordSnapshot | None:
+    """Convert schedule update's explicit UNSET marker for finalization."""
+    if value is UNSET:
+        return None
+    if value is not None and not isinstance(value, RecordSnapshot):
+        raise TypeError("prepared record must be a RecordSnapshot or None")
+    return value
 
 
 def _add_rating_handoff(

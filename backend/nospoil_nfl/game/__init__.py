@@ -27,6 +27,7 @@ from .rules import (
     rating_input_for_outcome,
 )
 from .updates import (
+    LiveFinalizationUpdate,
     LiveStatusUpdate,
     ScheduleUpdate,
     TeamScheduleUpdate,
@@ -42,6 +43,7 @@ __all__ = [
     "GameRating",
     "GameState",
     "GameStatus",
+    "LiveFinalizationUpdate",
     "LiveStatusUpdate",
     "OddsSnapshot",
     "RatingRetry",

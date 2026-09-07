@@ -133,6 +133,35 @@ class FakeRepository:
         )
         return WriteResult.APPLIED
 
+    def apply_live_finalization(self, current: Game, update: object) -> WriteResult:
+        stored = self.games[current.game_id]
+        if stored != current or (
+            stored.live_source_checked_at is not None
+            and update.observed_at <= stored.live_source_checked_at
+        ):
+            return WriteResult.STALE
+        if stored.status.state is GameState.FINAL:
+            return WriteResult.STALE
+        self.games[current.game_id] = replace(
+            stored,
+            status=update.status,
+            home=replace(
+                stored.home,
+                team_id=update.home_team_id,
+                pregame_record=update.home_pregame_record,
+                postgame_record=update.home_postgame_record,
+            ),
+            away=replace(
+                stored.away,
+                team_id=update.away_team_id,
+                pregame_record=update.away_pregame_record,
+                postgame_record=update.away_postgame_record,
+            ),
+            live_source_checked_at=update.observed_at,
+            live_state_updated_at=update.observed_at,
+        )
+        return WriteResult.APPLIED
+
     def apply_rating(self, current: Game, rating: GameRating) -> WriteResult:
         raise AssertionError("NS-007 must not calculate or save ratings")
 
@@ -487,6 +516,46 @@ def test_missing_started_game_is_checkpointed_and_has_a_finite_live_horizon() ->
     )
 
     assert provider.calls == []
+
+
+def test_live_finalization_prepares_records_before_final_status() -> None:
+    current = saved_game(
+        "live-final",
+        status=GameStatus(
+            GameState.IN_PROGRESS,
+            period=4,
+            clock="0:10",
+            score=Score(17, 14),
+        ),
+        home_record=record(1, 0, at=OLD),
+        away_record=record(0, 1, at=OLD),
+    )
+    final_status = GameStatus(GameState.FINAL, score=Score(24, 17))
+    provider = FakeScoreboard(
+        batch(
+            REGULAR_1,
+            observed_game(
+                "live-final",
+                status=final_status,
+                home_record=record(2, 0),
+                away_record=record(0, 2),
+            ),
+        )
+    )
+    repository = FakeRepository((current,))
+
+    result = ScheduleSyncService(repository, provider).run(
+        event(SyncMode.LIVE_TICK, season=2026),
+        now=NOW,
+    )
+
+    stored = repository.get(GameId("live-final"))
+    assert stored is not None
+    assert stored.status == final_status
+    assert stored.home.pregame_record == current.home.pregame_record
+    assert stored.home.postgame_record == record(2, 0)
+    assert stored.away.postgame_record == record(0, 2)
+    assert result.provisional_rating_game_ids == (GameId("live-final"),)
 
 
 def test_daily_refresh_recovers_nonterminal_game_from_a_past_week() -> None:
