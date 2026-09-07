@@ -172,6 +172,10 @@ class NflverseReconciliationService:
                 "error",
                 "nflverse_download_failed",
                 error_code=_provider_error_code(error),
+                exception_type=type(error).__name__,
+                provider=error.provider,
+                operation=error.operation,
+                message=str(error) or "provider failure",
             )
             if mode == "correction":
                 state.manual_correction_failure = True

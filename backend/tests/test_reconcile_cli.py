@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import io
 import json
+import logging
 import sys
 from types import SimpleNamespace
 
@@ -221,3 +223,125 @@ def test_explicit_season_limits_due_run(monkeypatch, capsys) -> None:
     assert calls == [2025]
     assert payload["season"] == 2025
     assert "seasons" not in payload
+
+
+def test_real_service_events_are_info_stderr_with_warning_root_handler(
+    monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
+
+    class FakeBoto3:
+        def resource(self, name: str) -> object:
+            return SimpleNamespace(Table=lambda table_name: object())
+
+    game = make_game("logged")
+    repository = FakeRepository((game,))
+    schedule, plays = source_for((game,))
+    source = NflverseSeason(schedule.schedule, plays.plays)
+    monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())
+    monkeypatch.setattr(
+        "backend.nospoil_nfl.game.dynamodb_repository.DynamoGameRepository",
+        lambda table, *, index_name: repository,
+    )
+    monkeypatch.setattr(
+        "backend.nospoil_nfl.rating.reconcile.NflverseScheduleClient", _Provider
+    )
+    monkeypatch.setattr(
+        "backend.nospoil_nfl.rating.reconcile.NflversePlayClient", _Provider
+    )
+
+    def build_service(repository, schedule_provider, play_provider):
+        return NflverseReconciliationService(
+            repository,
+            schedule_provider,
+            play_provider,
+            calculator=lambda rating_input: 8.0,
+            season_loader=lambda season, **providers: source,
+        )
+
+    root_logger = logging.getLogger()
+    previous_level = root_logger.level
+    root_handler = logging.StreamHandler(io.StringIO())
+    root_handler.setLevel(logging.WARNING)
+    root_logger.addHandler(root_handler)
+    root_logger.setLevel(logging.WARNING)
+    try:
+        assert main(
+            ["--mode", "due", "--season", "2026"],
+            clock=lambda: NOW,
+            service_factory=build_service,
+        ) == 0
+        captured = capsys.readouterr()
+    finally:
+        root_logger.removeHandler(root_handler)
+        root_logger.setLevel(previous_level)
+
+    payload = json.loads(captured.out.splitlines()[0])
+    assert payload["confirmed_updates"] == 1
+    assert '"event":"nflverse_rating_confirmed"' in captured.err
+    assert "24" not in captured.err and "17" not in captured.err
+
+
+def test_repeated_main_calls_keep_one_current_stderr_handler(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
+
+    class FakeBoto3:
+        def resource(self, name: str) -> object:
+            return SimpleNamespace(Table=lambda table_name: object())
+
+    monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())
+
+    def build_service(repository, schedule_provider, play_provider):
+        class LoggingService:
+            def run(self, season, *, now, mode, game_id):
+                logging.getLogger(
+                    "backend.nospoil_nfl.rating.reconciliation"
+                ).info('{"event":"repeat_probe"}')
+                return ReconciliationResult()
+
+        return LoggingService()
+
+    for _ in range(2):
+        assert main(
+            ["--mode", "due", "--season", "2026"],
+            clock=lambda: NOW,
+            service_factory=build_service,
+        ) == 0
+        captured = capsys.readouterr()
+        assert captured.err.count('{"event":"repeat_probe"}') == 1
+
+
+def test_unexpected_cli_failure_is_structured_and_score_free(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
+
+    class FakeBoto3:
+        def resource(self, name: str) -> object:
+            return SimpleNamespace(Table=lambda table_name: object())
+
+    monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())
+
+    def build_service(repository, schedule_provider, play_provider):
+        def fail(*args, **kwargs):
+            raise RuntimeError("diagnostic boom")
+
+        return SimpleNamespace(run=fail)
+
+    assert main(
+        ["--mode", "due", "--season", "2026"],
+        clock=lambda: NOW,
+        service_factory=build_service,
+    ) == 1
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out.splitlines()[0])
+    event = json.loads(captured.err.splitlines()[0])
+    assert payload["error"] == "execution_failed"
+    assert event == {
+        "error_code": "execution_failed",
+        "event": "nflverse_cli_failed",
+        "exception_type": "RuntimeError",
+        "message": "diagnostic boom",
+        "operation": None,
+        "provider": None,
+    }
+    assert "Traceback" in captured.err
+    assert "score" not in event

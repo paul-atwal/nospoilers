@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+import io
+import json
+import logging
 
 from backend.nospoil_nfl.game import (
     Game,
@@ -125,8 +128,10 @@ def make_game(
     final_at: datetime = NOW - timedelta(hours=7),
     rating: GameRating | None = None,
     season: int = WEEK.season,
+    phase: SeasonPhase = SeasonPhase.REGULAR_SEASON,
+    week: int = 1,
 ) -> Game:
-    season_week = SeasonWeek(season, SeasonPhase.REGULAR_SEASON, 1)
+    season_week = SeasonWeek(season, phase, week)
     return Game(
         game_id=GameId(game_id),
         espn_id=f"espn-{game_id}",
@@ -306,6 +311,27 @@ def test_source_failure_retries_unconfirmed_and_preserves_confirmed() -> None:
     assert repository.games[GameId("confirmed")].confirmation_retry == RatingRetry()
 
 
+def test_source_failure_retries_supported_games_only() -> None:
+    supported = make_game("supported")
+    unsupported = make_game("preseason", phase=SeasonPhase.PRESEASON)
+    repository = FakeRepository((supported, unsupported))
+    failure = ProviderUnavailableError(
+        "down",
+        provider="nflverse",
+        operation="plays",
+    )
+    schedule = FakeScheduleProvider(failure)
+    plays = FakePlayProvider(failure)
+
+    result = service(repository, schedule, plays).run_due(2026, now=NOW)
+
+    assert result.selected == 1
+    assert result.source_failure is True
+    assert result.retries == 1
+    assert repository.games[supported.game_id].confirmation_retry.attempt_count == 1
+    assert repository.games[unsupported.game_id] == unsupported
+
+
 def test_strong_reread_skips_a_newer_confirmed_rating() -> None:
     pending = make_game("one")
     current_confirmed = replace(pending, rating=confirmed_rating())
@@ -349,6 +375,24 @@ def test_correction_skips_same_hash_and_updates_changed_model() -> None:
 
     assert changed.confirmed_updates == 1
     assert repository.games[game.game_id].rating.model_version == "rating-v2"
+
+
+def test_broad_correction_excludes_unsupported_confirmed_games() -> None:
+    supported = make_game("supported", rating=confirmed_rating())
+    unsupported = make_game(
+        "preseason",
+        phase=SeasonPhase.PRESEASON,
+        rating=confirmed_rating(),
+    )
+    repository = FakeRepository((supported, unsupported))
+    schedule, plays = source_for((supported,))
+
+    result = service(repository, schedule, plays).run_correction(2026, now=NOW)
+
+    assert result.selected == 1
+    assert result.downloads == 1
+    assert result.confirmed_updates == 1
+    assert repository.games[unsupported.game_id] == unsupported
 
 
 def test_validation_mismatch_retries_without_replacing_rating() -> None:
@@ -442,3 +486,98 @@ def test_source_failure_skips_a_candidate_whose_retry_moved_after_selection() ->
     assert result.retries == 0
     assert result.overdue == 0
     assert repository.games[selected.game_id].confirmation_retry == moved.confirmation_retry
+
+
+def test_unsupported_games_are_not_due_or_overdue_and_preserve_rating() -> None:
+    preseason = make_game(
+        "pre",
+        final_at=NOW - timedelta(hours=30),
+        phase=SeasonPhase.PRESEASON,
+        rating=provisional_rating(),
+    )
+    bowl = make_game(
+        "bowl",
+        final_at=NOW - timedelta(hours=30),
+        phase=SeasonPhase.POSTSEASON,
+        week=4,
+        rating=GameRating(
+            RatingState.UNAVAILABLE,
+            RatingRetry(1, last_error="espn"),
+        ),
+    )
+    repository = FakeRepository((preseason, bowl))
+    schedule, plays = source_for((preseason,))
+    result = service(repository, schedule, plays).run_due(2026, now=NOW)
+    assert result.selected == result.downloads == result.overdue == result.retries == 0
+    assert repository.games[preseason.game_id].rating == preseason.rating
+    assert repository.games[bowl.game_id].rating == bowl.rating
+
+
+def test_targeted_unsupported_correction_fails_before_download() -> None:
+    game = make_game("pre", phase=SeasonPhase.PRESEASON)
+    repository = FakeRepository((game,))
+    schedule, plays = source_for((game,))
+    stream = io.StringIO()
+    logger = logging.getLogger("a3-targeted-unsupported")
+    logger.handlers.clear()
+    logger.addHandler(logging.StreamHandler(stream))
+    logger.setLevel(logging.INFO)
+    service_instance = NflverseReconciliationService(
+        repository,
+        schedule,
+        plays,
+        calculator=lambda value: 8.0,
+        logger=logger,
+    )
+
+    result = service_instance.run_correction(2026, now=NOW, game_id=game.game_id)
+
+    assert result.manual_correction_failure is True
+    assert result.downloads == result.selected == 0
+    assert schedule.calls == plays.calls == []
+    event = json.loads(stream.getvalue())
+    assert event["error_code"] == "unsupported_competition"
+    assert event["reason"] == "preseason_unsupported"
+
+
+def test_strong_reread_changing_to_unsupported_skips_work() -> None:
+    selected = make_game("one")
+    changed = replace(selected, season_week=SeasonWeek(2026, SeasonPhase.PRESEASON, 1))
+    repository = FakeRepository((changed,))
+    repository.list_overrides = [[selected]]
+    repository.get_overrides[selected.game_id] = [changed]
+    schedule, plays = source_for((selected,))
+    result = service(repository, schedule, plays).run_due(2026, now=NOW)
+    assert result.selected == 1
+    assert result.retries == result.confirmed_updates == 0
+
+
+def test_consumed_provider_failure_logs_structured_context_without_scores() -> None:
+    game = make_game("failed")
+    repository = FakeRepository((game,))
+    failure = ProviderUnavailableError(
+        "schedule timeout",
+        provider="nflverse",
+        operation="schedule",
+    )
+    schedule = FakeScheduleProvider(failure)
+    plays = FakePlayProvider(failure)
+    stream = io.StringIO()
+    logger = logging.getLogger("a3-provider-failure")
+    logger.handlers.clear()
+    logger.addHandler(logging.StreamHandler(stream))
+    logger.setLevel(logging.INFO)
+    service_instance = NflverseReconciliationService(
+        repository, schedule, plays, calculator=lambda value: 8.0, logger=logger
+    )
+    service_instance.run_due(2026, now=NOW)
+    event = next(
+        json.loads(line)
+        for line in stream.getvalue().splitlines()
+        if '"event":"nflverse_download_failed"' in line
+    )
+    assert event["error_code"] == "nflverse_schedule_unavailable"
+    assert event["exception_type"] == "ProviderUnavailableError"
+    assert event["provider"] == "nflverse"
+    assert event["operation"] == "schedule"
+    assert "24" not in stream.getvalue() and "17" not in stream.getvalue()

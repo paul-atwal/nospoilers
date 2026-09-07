@@ -1,5 +1,6 @@
 """Public rating API."""
 
+from .input import RatingInput, hash_rating_input
 from .calculator import calculate_rating
 from .confirmation import (
     ConfirmationSupport,
@@ -7,7 +8,6 @@ from .confirmation import (
     confirmation_work_remains,
     is_confirmation_supported,
 )
-from .input import RatingInput, hash_rating_input
 
 __all__ = [
     "ConfirmationSupport",
