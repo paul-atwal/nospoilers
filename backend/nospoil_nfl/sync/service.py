@@ -394,19 +394,21 @@ class ScheduleSyncService:
         )
         any_applied = False
         finalization = None
+        finalization_applied = False
         schedule_update = None
         if live_status is not None:
-            # Prepare records from the pre-final current snapshot.  The final
-            # status is not durable until these values can be committed with it.
-            schedule_update, _, _ = _schedule_update(
-                season_week,
-                observed_at,
-                observation,
-                current,
-                {},
-                include_status=False,
-            )
             if live_status.state is GameState.FINAL:
+                # Prepare records from the pre-final current snapshot.  The
+                # final status is not durable until these values can be
+                # committed with it.
+                schedule_update, _, _ = _schedule_update(
+                    season_week,
+                    observed_at,
+                    observation,
+                    current,
+                    {},
+                    include_status=False,
+                )
                 # Final preparation always resolves omitted source records to
                 # either a saved/derived snapshot or None.  UNSET is reserved
                 # for non-final schedule updates.
@@ -429,6 +431,7 @@ class ScheduleSyncService:
                     current,
                     finalization,
                 )
+                finalization_applied = live_result is WriteResult.APPLIED
             else:
                 live_result = self._repository.apply_live_status(
                     current,
@@ -476,7 +479,28 @@ class ScheduleSyncService:
         latest = self._repository.get(current.game_id)
         if latest is None:
             raise RuntimeError("game disappeared during live sync")
-        if schedule_update is None:
+        if finalization_applied and latest.status.state is GameState.FINAL:
+            # Record fields are already part of the atomic finalization.
+            # Keep this follow-up limited to schedule metadata and team
+            # display data.
+            assert schedule_update is not None
+            schedule_update = replace(
+                schedule_update,
+                home=replace(
+                    schedule_update.home,
+                    pregame_record=UNSET,
+                    postgame_record=UNSET,
+                ),
+                away=replace(
+                    schedule_update.away,
+                    pregame_record=UNSET,
+                    postgame_record=UNSET,
+                ),
+            )
+        else:
+            # Every non-final follow-up must be prepared from the strong
+            # reread.  A pre-live update can describe an old record snapshot
+            # and clear fields committed by a concurrent finalization.
             schedule_update, _, _ = _schedule_update(
                 season_week,
                 observed_at,
@@ -485,41 +509,31 @@ class ScheduleSyncService:
                 {},
                 include_status=False,
             )
-        elif finalization is not None:
-            if latest.status.state is GameState.FINAL:
-                # Record fields are already part of the atomic finalization.
-                # Keep this follow-up limited to schedule metadata and team
-                # display data.
-                schedule_update = replace(
-                    schedule_update,
-                    home=replace(
-                        schedule_update.home,
-                        pregame_record=UNSET,
-                        postgame_record=UNSET,
-                    ),
-                    away=replace(
-                        schedule_update.away,
-                        pregame_record=UNSET,
-                        postgame_record=UNSET,
-                    ),
-                )
-            else:
-                # Another writer won the finalization race; prepare against
-                # its current state so a non-final schedule write remains
-                # valid and cannot carry final-only records backward.
-                schedule_update, _, _ = _schedule_update(
-                    season_week,
-                    observed_at,
-                    observation,
-                    latest,
-                    {},
-                    include_status=False,
-                )
-                schedule_update = replace(
-                    schedule_update,
-                    home=replace(schedule_update.home, postgame_record=UNSET),
-                    away=replace(schedule_update.away, postgame_record=UNSET),
-                )
+            if finalization is not None:
+                if latest.status.state is GameState.FINAL:
+                    # Another writer won finalization.  Do not let this
+                    # observation overwrite its record snapshots.
+                    schedule_update = replace(
+                        schedule_update,
+                        home=replace(
+                            schedule_update.home,
+                            pregame_record=UNSET,
+                            postgame_record=UNSET,
+                        ),
+                        away=replace(
+                            schedule_update.away,
+                            pregame_record=UNSET,
+                            postgame_record=UNSET,
+                        ),
+                    )
+                else:
+                    # A finalization attempt did not win.  Keep final-only
+                    # records out of a non-final follow-up.
+                    schedule_update = replace(
+                        schedule_update,
+                        home=replace(schedule_update.home, postgame_record=UNSET),
+                        away=replace(schedule_update.away, postgame_record=UNSET),
+                    )
         schedule_result = self._repository.apply_schedule(latest, schedule_update)
         if schedule_result is WriteResult.APPLIED:
             any_applied = True

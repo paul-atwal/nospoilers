@@ -969,6 +969,70 @@ def test_real_service_derives_regular_postgame_records_when_source_omits_records
     assert result.provisional_rating_game_ids == (current.game_id,)
 
 
+def test_nonfinal_live_reread_preserves_concurrent_final_records_and_rating(
+    game_table: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = make_game("401000099")
+    assert repository.create_if_absent(current) is True
+    observed_at = datetime(2026, 9, 10, 19, 0, tzinfo=UTC)
+    batch = live_observation(
+        current,
+        observed_at=observed_at,
+        include_records=False,
+    )
+    batch = replace(
+        batch,
+        games=(
+            replace(
+                batch.games[0],
+                status=GameStatus(
+                    GameState.IN_PROGRESS,
+                    score=Score(home=0, away=0),
+                    period=1,
+                ),
+            ),
+        ),
+    )
+    final_update = live_finalization_update(
+        current,
+        observed_at=observed_at,
+        status=GameStatus(GameState.FINAL, score=Score(home=24, away=17)),
+        home_pregame_record=make_record(1, 0, snapshot_at=observed_at),
+        home_postgame_record=make_record(2, 0, snapshot_at=observed_at),
+        away_pregame_record=make_record(0, 1, snapshot_at=observed_at),
+        away_postgame_record=make_record(0, 2, snapshot_at=observed_at),
+    )
+    real_apply = repository.apply_live_status
+
+    def finalize_then_apply(snapshot: Game, update: LiveStatusUpdate) -> WriteResult:
+        assert repository.apply_live_finalization(snapshot, final_update) is WriteResult.APPLIED
+        return real_apply(snapshot, update)
+
+    monkeypatch.setattr(repository, "apply_live_status", finalize_then_apply)
+
+    class Provider:
+        def fetch_scoreboard(
+            self, season_week: SeasonWeek | None = None
+        ) -> ScoreboardBatch:
+            return batch
+
+    ScheduleSyncService(repository, Provider()).run(
+        SyncEvent(SyncMode.LIVE_TICK, observed_at, current.season_week.season),
+        now=observed_at,
+    )
+
+    saved = repository.get(current.game_id)
+    assert saved is not None
+    assert saved.status == final_update.status
+    assert saved.home.pregame_record == final_update.home_pregame_record
+    assert saved.home.postgame_record == final_update.home_postgame_record
+    assert saved.away.pregame_record == final_update.away_pregame_record
+    assert saved.away.postgame_record == final_update.away_postgame_record
+    assert saved.rating == current.rating
+
+
 def test_apply_live_status_cannot_replace_a_schedule_status_write(
     game_table: object,
 ) -> None:
