@@ -673,7 +673,7 @@ def _schedule_status(
 ) -> tuple[GameStatus | None, bool, bool]:
     if not include_status:
         return None, False, False
-    if can_transition_game_state(current.status, observation.status.state):
+    if can_transition_game_state(current.status, observation.status):
         return observation.status, False, False
     if (
         current.status.state is GameState.DELAYED

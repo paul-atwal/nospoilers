@@ -80,26 +80,32 @@ _RATING_STATE_TRANSITIONS: dict[RatingState, frozenset[RatingState]] = {
 
 def can_transition_game_state(
     current: GameStatus,
-    target: GameState,
+    target: GameStatus,
 ) -> bool:
-    """Return whether normal sync work may apply a game-state observation."""
+    """Return whether normal sync work may apply a complete status observation."""
     if not isinstance(current, GameStatus):
         raise DomainValidationError(
             "game-state transitions require a canonical GameStatus"
         )
-    if not isinstance(target, GameState):
+    if not isinstance(target, GameStatus):
         raise DomainValidationError(
-            "game-state transitions require a canonical target GameState"
+            "game-state transitions require a canonical target GameStatus"
         )
+
+    # A status that proves play began must remain started.  This check is
+    # intentionally based on the complete status rather than only its state;
+    # a score of 0-0 is still evidence that the game has started.
+    if current.has_started and not target.has_started:
+        return False
 
     if (
         current.state is GameState.DELAYED
         and not current.has_started
-        and target is GameState.POSTPONED
+        and target.state is GameState.POSTPONED
     ):
         return True
 
-    return target in _GAME_STATE_TRANSITIONS[current.state]
+    return target.state in _GAME_STATE_TRANSITIONS[current.state]
 
 
 def can_transition_rating_state(

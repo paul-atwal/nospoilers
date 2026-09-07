@@ -158,7 +158,7 @@ class DynamoGameRepository(GameRepository):
         proposed = self._scheduled_game(current, update)
         status_changed = proposed.status != current.status
         if status_changed:
-            if not can_transition_game_state(current.status, proposed.status.state):
+            if not can_transition_game_state(current.status, proposed.status):
                 raise DomainValidationError("schedule update has an invalid status transition")
             if (
                 current.live_source_checked_at is not None
@@ -217,7 +217,7 @@ class DynamoGameRepository(GameRepository):
         status_changed = update.status != current.status
         if status_changed and not can_transition_game_state(
             current.status,
-            update.status.state,
+            update.status,
         ):
             raise DomainValidationError("live update has an invalid status transition")
 

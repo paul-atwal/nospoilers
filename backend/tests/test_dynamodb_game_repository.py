@@ -464,6 +464,56 @@ def test_apply_schedule_can_postpone_a_scoreless_delayed_game(game_table: object
     assert stored.live_source_checked_at == datetime(2026, 9, 10, 19, 0, tzinfo=UTC)
 
 
+@pytest.mark.parametrize("score", [Score(home=7, away=0), Score(home=0, away=0)])
+def test_apply_schedule_rejects_scoreless_delay_after_play_started(
+    game_table: object,
+    score: Score,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    started = replace(
+        make_game("401000001"),
+        status=GameStatus(GameState.IN_PROGRESS, period=1, score=score),
+    )
+    assert repository.create_if_absent(started) is True
+
+    with pytest.raises(DomainValidationError, match="invalid status transition"):
+        repository.apply_schedule(
+            started,
+            schedule_update(
+                started,
+                observed_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
+                status=GameStatus(GameState.DELAYED),
+            ),
+        )
+
+    assert repository.get(started.game_id) == started
+
+
+@pytest.mark.parametrize("score", [Score(home=7, away=0), Score(home=0, away=0)])
+def test_apply_live_status_rejects_scoreless_delay_after_play_started(
+    game_table: object,
+    score: Score,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    started = replace(
+        make_game("401000001"),
+        status=GameStatus(GameState.IN_PROGRESS, period=1, score=score),
+    )
+    assert repository.create_if_absent(started) is True
+
+    with pytest.raises(DomainValidationError, match="invalid status transition"):
+        repository.apply_live_status(
+            started,
+            live_status_update(
+                started,
+                observed_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
+                status=GameStatus(GameState.DELAYED),
+            ),
+        )
+
+    assert repository.get(started.game_id) == started
+
+
 def test_apply_live_status_advances_only_the_source_check_when_unchanged(
     game_table: object,
 ) -> None:

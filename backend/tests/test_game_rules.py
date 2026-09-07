@@ -88,7 +88,15 @@ def test_game_state_transition_matrix(
     actual_targets = {
         target
         for target in GameState
-        if can_transition_game_state(make_game_status(current), target)
+        if can_transition_game_state(
+            make_game_status(current),
+            (
+                GameStatus(target, score=Score(home=0, away=0))
+                if make_game_status(current).has_started
+                and target in {GameState.DELAYED, GameState.CANCELLED}
+                else make_game_status(target)
+            ),
+        )
     }
 
     assert actual_targets == allowed_targets
@@ -101,12 +109,12 @@ def test_game_state_transition_requires_canonical_status_and_target() -> None:
     ):
         can_transition_game_state(
             GameState.SCHEDULED,
-            GameState.FINAL,
+            make_game_status(GameState.FINAL),
         )
 
     with pytest.raises(
         DomainValidationError,
-        match="transitions require a canonical target GameState",
+        match="transitions require a canonical target GameStatus",
     ):
         can_transition_game_state(
             GameStatus(state=GameState.SCHEDULED),
@@ -118,10 +126,13 @@ def test_prekickoff_delay_can_be_postponed_and_rescheduled() -> None:
     delayed = GameStatus(state=GameState.DELAYED)
 
     assert not delayed.has_started
-    assert can_transition_game_state(delayed, GameState.POSTPONED)
+    assert can_transition_game_state(
+        delayed,
+        GameStatus(GameState.POSTPONED),
+    )
     assert can_transition_game_state(
         GameStatus(state=GameState.POSTPONED),
-        GameState.SCHEDULED,
+        GameStatus(GameState.SCHEDULED),
     )
 
 
@@ -133,8 +144,14 @@ def test_started_delay_cannot_regress_to_postponed() -> None:
     )
 
     assert delayed.has_started
-    assert not can_transition_game_state(delayed, GameState.POSTPONED)
-    assert not can_transition_game_state(delayed, GameState.SCHEDULED)
+    assert not can_transition_game_state(
+        delayed,
+        GameStatus(GameState.POSTPONED),
+    )
+    assert not can_transition_game_state(
+        delayed,
+        GameStatus(GameState.SCHEDULED),
+    )
 
 
 @pytest.mark.parametrize(
