@@ -43,6 +43,8 @@ from backend.nospoil_nfl.game.repository import (
     GameRepositoryError,
     NflverseIdConflictError,
 )
+from backend.nospoil_nfl.providers import ScheduleGame, ScheduleTeam, ScoreboardBatch
+from backend.nospoil_nfl.sync import ScheduleSyncService, SyncEvent, SyncMode
 
 
 CHECKED_AT = datetime(2026, 9, 10, 18, 0, tzinfo=UTC)
@@ -187,17 +189,46 @@ def live_finalization_update(
     home_postgame_record: RecordSnapshot | None = None,
     away_pregame_record: RecordSnapshot | None = None,
     away_postgame_record: RecordSnapshot | None = None,
+    home_team_id: str | None = None,
+    away_team_id: str | None = None,
 ) -> LiveFinalizationUpdate:
     return LiveFinalizationUpdate(
         game_id=game.game_id,
         observed_at=observed_at,
         status=status,
-        home_team_id=game.home.team_id,
-        away_team_id=game.away.team_id,
+        home_team_id=game.home.team_id if home_team_id is None else home_team_id,
+        away_team_id=game.away.team_id if away_team_id is None else away_team_id,
         home_pregame_record=home_pregame_record,
         home_postgame_record=home_postgame_record,
         away_pregame_record=away_pregame_record,
         away_postgame_record=away_postgame_record,
+    )
+
+
+def live_observation(game: Game, *, observed_at: datetime) -> ScoreboardBatch:
+    final = GameStatus(GameState.FINAL, score=Score(home=24, away=17))
+    return ScoreboardBatch(
+        observed_at=observed_at,
+        season_week=game.season_week,
+        games=(
+            ScheduleGame(
+                game_id=game.game_id,
+                kickoff_at=game.kickoff_at,
+                home=ScheduleTeam(
+                    team_id=game.home.team_id,
+                    display_name=game.home.display_name,
+                    abbreviation=game.home.abbreviation,
+                    record=make_record(2, 0, snapshot_at=observed_at),
+                ),
+                away=ScheduleTeam(
+                    team_id=game.away.team_id,
+                    display_name=game.away.display_name,
+                    abbreviation=game.away.abbreviation,
+                    record=make_record(0, 2, snapshot_at=observed_at),
+                ),
+                status=final,
+            ),
+        ),
     )
 
 
@@ -648,6 +679,211 @@ def test_apply_live_finalization_commits_status_and_records_together(
     assert repository.apply_live_finalization(original, update) is WriteResult.STALE
 
 
+def test_live_finalization_rejects_team_ownership_mismatch(game_table: object) -> None:
+    repository = DynamoGameRepository(game_table)
+    original = make_game("401000002")
+    assert repository.create_if_absent(original) is True
+    update = live_finalization_update(
+        original,
+        observed_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
+        status=GameStatus(GameState.FINAL, score=Score(home=24, away=17)),
+        home_team_id="new-home",
+    )
+
+    assert repository.apply_live_finalization(original, update) is WriteResult.STALE
+    assert repository.get(original.game_id) == original
+
+
+def test_schedule_write_prepared_before_finalization_loses_status_race(
+    game_table: object,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    original = make_game("401000003")
+    assert repository.create_if_absent(original) is True
+    final_status = GameStatus(GameState.FINAL, score=Score(home=24, away=17))
+    stale_schedule = schedule_update(
+        original,
+        observed_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
+        broadcaster="stale schedule",
+    )
+    final_update = live_finalization_update(
+        original,
+        observed_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
+        status=final_status,
+    )
+
+    assert repository.apply_live_finalization(original, final_update) is WriteResult.APPLIED
+    assert repository.apply_schedule(original, stale_schedule) is WriteResult.STALE
+    stored = repository.get(original.game_id)
+    assert stored is not None
+    assert stored.status == final_status
+
+
+def test_finalization_prepared_before_schedule_loses_schedule_race(
+    game_table: object,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    original = make_game("401000004")
+    assert repository.create_if_absent(original) is True
+    stale_final = live_finalization_update(
+        original,
+        observed_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
+        status=GameStatus(GameState.FINAL, score=Score(home=24, away=17)),
+    )
+    schedule = schedule_update(
+        original,
+        observed_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
+        broadcaster="new schedule",
+    )
+
+    assert repository.apply_schedule(original, schedule) is WriteResult.APPLIED
+    assert repository.apply_live_finalization(original, stale_final) is WriteResult.STALE
+    stored = repository.get(original.game_id)
+    assert stored is not None
+    assert stored.status.state is GameState.SCHEDULED
+    assert stored.broadcaster == "new schedule"
+
+
+def test_real_service_retries_after_precommit_transport_failure(
+    game_table: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = make_game("401000005")
+    assert repository.create_if_absent(current) is True
+    observed_at = datetime(2026, 9, 10, 19, 0, tzinfo=UTC)
+    batch = live_observation(current, observed_at=observed_at)
+
+    class Provider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def fetch_scoreboard(self, season_week: SeasonWeek | None = None) -> ScoreboardBatch:
+            self.calls += 1
+            return batch
+
+    provider = Provider()
+    original_update_item = game_table.update_item
+    failed = False
+
+    def fail_before_commit(**kwargs: object) -> object:
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise EndpointConnectionError(endpoint_url="injected-before-finalization")
+        return original_update_item(**kwargs)
+
+    monkeypatch.setattr(game_table, "update_item", fail_before_commit)
+    service = ScheduleSyncService(repository, provider)
+    with pytest.raises(GameRepositoryError):
+        service.run(
+            SyncEvent(SyncMode.LIVE_TICK, observed_at, current.season_week.season),
+            now=observed_at,
+        )
+
+    after_failure = repository.get(current.game_id)
+    assert after_failure is not None
+    assert after_failure.status.state is GameState.SCHEDULED
+    assert after_failure.home.postgame_record is None
+
+    monkeypatch.setattr(game_table, "update_item", original_update_item)
+    result = service.run(
+        SyncEvent(SyncMode.LIVE_TICK, observed_at, current.season_week.season),
+        now=observed_at,
+    )
+    repaired = repository.get(current.game_id)
+    assert repaired is not None
+    assert repaired.status.state is GameState.FINAL
+    assert repaired.home.postgame_record is not None
+    assert repaired.away.postgame_record is not None
+    assert result.provisional_rating_game_ids == (current.game_id,)
+    assert provider.calls == 2
+
+
+def test_real_service_postcommit_failure_leaves_records_and_handoff(
+    game_table: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = make_game("401000006")
+    assert repository.create_if_absent(current) is True
+    observed_at = datetime(2026, 9, 10, 19, 0, tzinfo=UTC)
+    batch = live_observation(current, observed_at=observed_at)
+
+    class Provider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def fetch_scoreboard(self, season_week: SeasonWeek | None = None) -> ScoreboardBatch:
+            self.calls += 1
+            return batch
+
+    provider = Provider()
+    original_update_item = game_table.update_item
+    update_count = 0
+
+    def fail_after_commit(**kwargs: object) -> object:
+        nonlocal update_count
+        update_count += 1
+        if update_count == 2:
+            raise EndpointConnectionError(endpoint_url="injected-after-finalization")
+        return original_update_item(**kwargs)
+
+    monkeypatch.setattr(game_table, "update_item", fail_after_commit)
+    service = ScheduleSyncService(repository, provider)
+    with pytest.raises(GameRepositoryError):
+        service.run(
+            SyncEvent(SyncMode.LIVE_TICK, observed_at, current.season_week.season),
+            now=observed_at,
+        )
+
+    committed = repository.get(current.game_id)
+    assert committed is not None
+    assert committed.status.state is GameState.FINAL
+    assert committed.home.postgame_record is not None
+    assert committed.away.postgame_record is not None
+
+    monkeypatch.setattr(game_table, "update_item", original_update_item)
+    provider.calls = 0
+    result = service.run(
+        SyncEvent(SyncMode.LIVE_TICK, observed_at, current.season_week.season),
+        now=observed_at,
+    )
+    assert provider.calls == 0
+    assert result.provisional_rating_game_ids == (current.game_id,)
+
+
+def test_real_service_keeps_postseason_records_static(game_table: object) -> None:
+    repository = DynamoGameRepository(game_table)
+    postseason = SeasonWeek(2026, SeasonPhase.POSTSEASON, 1)
+    pregame = make_record(12, 5, snapshot_at=CHECKED_AT)
+    current = replace(
+        make_game("401000007", season_week=postseason),
+        home=replace(make_team("home-401000007"), pregame_record=pregame),
+        away=replace(make_team("away-401000007"), pregame_record=make_record(9, 8, snapshot_at=CHECKED_AT)),
+    )
+    assert repository.create_if_absent(current) is True
+    observed_at = datetime(2026, 9, 10, 19, 0, tzinfo=UTC)
+    batch = live_observation(current, observed_at=observed_at)
+
+    class Provider:
+        def fetch_scoreboard(self, season_week: SeasonWeek | None = None) -> ScoreboardBatch:
+            return batch
+
+    result = ScheduleSyncService(repository, Provider()).run(
+        SyncEvent(SyncMode.LIVE_TICK, observed_at, current.season_week.season),
+        now=observed_at,
+    )
+
+    stored = repository.get(current.game_id)
+    assert stored is not None
+    assert stored.status.state is GameState.FINAL
+    assert stored.home.pregame_record == pregame
+    assert stored.home.postgame_record is None
+    assert stored.away.postgame_record is None
+    assert result.provisional_rating_game_ids == (current.game_id,)
+
+
 def test_apply_live_status_cannot_replace_a_schedule_status_write(
     game_table: object,
 ) -> None:
@@ -703,6 +939,24 @@ def test_apply_live_status_rejects_a_final_game_regression(game_table: object) -
                 ),
             ),
         )
+
+
+def test_apply_live_status_cannot_finalize_without_records(game_table: object) -> None:
+    repository = DynamoGameRepository(game_table)
+    current = make_game("401000001")
+    assert repository.create_if_absent(current) is True
+
+    with pytest.raises(DomainValidationError, match="apply_live_finalization"):
+        repository.apply_live_status(
+            current,
+            live_status_update(
+                current,
+                observed_at=datetime(2026, 9, 10, 19, 0, tzinfo=UTC),
+                status=GameStatus(GameState.FINAL, score=Score(home=24, away=17)),
+            ),
+        )
+
+    assert repository.get(current.game_id) == current
 
 
 def test_apply_live_status_preserves_a_confirmed_rating_and_nflverse_id(

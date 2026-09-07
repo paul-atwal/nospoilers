@@ -415,16 +415,20 @@ class ScheduleSyncService:
                     home_team_id=schedule_update.home.team_id,
                     away_team_id=schedule_update.away.team_id,
                     home_pregame_record=_record_value(
-                        schedule_update.home.pregame_record
+                        schedule_update.home.pregame_record,
+                        current.home.pregame_record,
                     ),
                     home_postgame_record=_record_value(
-                        schedule_update.home.postgame_record
+                        schedule_update.home.postgame_record,
+                        current.home.postgame_record,
                     ),
                     away_pregame_record=_record_value(
-                        schedule_update.away.pregame_record
+                        schedule_update.away.pregame_record,
+                        current.away.pregame_record,
                     ),
                     away_postgame_record=_record_value(
-                        schedule_update.away.postgame_record
+                        schedule_update.away.postgame_record,
+                        current.away.postgame_record,
                     ),
                 )
                 live_result = self._repository.apply_live_finalization(
@@ -516,6 +520,11 @@ class ScheduleSyncService:
                     latest,
                     {},
                     include_status=False,
+                )
+                schedule_update = replace(
+                    schedule_update,
+                    home=replace(schedule_update.home, postgame_record=UNSET),
+                    away=replace(schedule_update.away, postgame_record=UNSET),
                 )
         schedule_result = self._repository.apply_schedule(latest, schedule_update)
         if schedule_result is WriteResult.APPLIED:
@@ -851,10 +860,13 @@ def _record_write(
         _emit(logger, "info", "stale_or_duplicate_write", game_id=str(game_id))
 
 
-def _record_value(value: RecordSnapshot | None | _Unset) -> RecordSnapshot | None:
+def _record_value(
+    value: RecordSnapshot | None | _Unset,
+    saved: RecordSnapshot | None,
+) -> RecordSnapshot | None:
     """Convert schedule update's explicit UNSET marker for finalization."""
     if value is UNSET:
-        return None
+        return saved
     if value is not None and not isinstance(value, RecordSnapshot):
         raise TypeError("prepared record must be a RecordSnapshot or None")
     return value

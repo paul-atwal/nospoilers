@@ -210,6 +210,13 @@ class DynamoGameRepository(GameRepository):
         if current.game_id != update.game_id:
             raise DomainValidationError("live update game_id must match current game")
         if (
+            update.status.state is GameState.FINAL
+            and current.status.state is not GameState.FINAL
+        ):
+            raise DomainValidationError(
+                "live final status requires apply_live_finalization"
+            )
+        if (
             current.live_source_checked_at is not None
             and update.observed_at <= current.live_source_checked_at
         ):
@@ -252,6 +259,11 @@ class DynamoGameRepository(GameRepository):
             raise DomainValidationError("live finalization game_id must match current game")
         if current.status.state is GameState.FINAL:
             return WriteResult.STALE
+        if (
+            update.home_team_id != current.home.team_id
+            or update.away_team_id != current.away.team_id
+        ):
+            return WriteResult.STALE
         if not can_transition_game_state(current.status, update.status):
             raise DomainValidationError("live finalization has an invalid status transition")
         if (
@@ -265,13 +277,11 @@ class DynamoGameRepository(GameRepository):
             status=update.status,
             home=replace(
                 current.home,
-                team_id=update.home_team_id,
                 pregame_record=update.home_pregame_record,
                 postgame_record=update.home_postgame_record,
             ),
             away=replace(
                 current.away,
-                team_id=update.away_team_id,
                 pregame_record=update.away_pregame_record,
                 postgame_record=update.away_postgame_record,
             ),
@@ -612,11 +622,13 @@ class DynamoGameRepository(GameRepository):
         names.update(
             {
                 "#game_id": "game_id",
+                "#status": "status",
                 "#schedule_checked_at": "schedule_checked_at",
             }
         )
         values: dict[str, object] = {
             ":expected_schedule_checked_at": current_item["schedule_checked_at"],
+            ":expected_status": current_item["status"],
         }
         set_terms: list[str] = []
         for index, (field_name, value) in enumerate(set_fields.items()):
@@ -627,11 +639,9 @@ class DynamoGameRepository(GameRepository):
         condition_terms = [
             "attribute_exists(#game_id)",
             "#schedule_checked_at = :expected_schedule_checked_at",
+            "#status = :expected_status",
         ]
         if status_changed:
-            names["#status"] = "status"
-            values[":expected_status"] = current_item["status"]
-            condition_terms.append("#status = :expected_status")
             if current.live_source_checked_at is None:
                 names["#live_source_checked_at"] = "live_source_checked_at"
                 condition_terms.append("attribute_not_exists(#live_source_checked_at)")
@@ -730,8 +740,6 @@ class DynamoGameRepository(GameRepository):
             "status": proposed_item["status"],
             "live_source_checked_at": proposed_item["live_source_checked_at"],
             "live_state_updated_at": proposed_item["live_state_updated_at"],
-            "home.team_id": proposed_item["home"]["team_id"],
-            "away.team_id": proposed_item["away"]["team_id"],
         }
         remove_fields: list[str] = []
         for team_name in ("home", "away"):

@@ -122,6 +122,8 @@ class FakeRepository:
             and update.observed_at <= stored.live_source_checked_at
         ):
             return WriteResult.STALE
+        if update.status.state is GameState.FINAL and stored.status.state is not GameState.FINAL:
+            raise ValueError("live final status requires apply_live_finalization")
         changed = stored.status != update.status
         self.games[current.game_id] = replace(
             stored,
@@ -142,18 +144,21 @@ class FakeRepository:
             return WriteResult.STALE
         if stored.status.state is GameState.FINAL:
             return WriteResult.STALE
+        if (
+            update.home_team_id != stored.home.team_id
+            or update.away_team_id != stored.away.team_id
+        ):
+            return WriteResult.STALE
         self.games[current.game_id] = replace(
             stored,
             status=update.status,
             home=replace(
                 stored.home,
-                team_id=update.home_team_id,
                 pregame_record=update.home_pregame_record,
                 postgame_record=update.home_postgame_record,
             ),
             away=replace(
                 stored.away,
-                team_id=update.away_team_id,
                 pregame_record=update.away_pregame_record,
                 postgame_record=update.away_postgame_record,
             ),
