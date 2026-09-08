@@ -129,6 +129,27 @@ export interface GameRecordSnapshots {
   readonly postgame?: RecordSnapshot;
 }
 
+export interface KickoffView {
+  time: string;
+  day: string;
+  date: string;
+  zone: string;
+}
+
+export interface TeamView {
+  id: string;
+  name: string;
+  abbreviation: string;
+  logoUrl: string | null;
+  records: GameRecordSnapshots | null;
+}
+
+export interface RatingPresentation {
+  state: ApiRatingState;
+  label: string;
+  score: number | null;
+}
+
 export interface Game {
   id: string;
   homeTeam: string;
@@ -151,4 +172,8 @@ export interface Game {
   isUpcoming?: boolean;
   isLive?: boolean;
   odds?: string;
+  kickoff?: KickoffView;
+  home?: TeamView;
+  away?: TeamView;
+  rating?: RatingPresentation;
 }

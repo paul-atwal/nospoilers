@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { toViewGame } from '../../App';
+import { formatKickoff, toViewGame } from '../../services/gameViewModel';
+import { getTeamLogoUrl } from '../../services/teamAssets';
 import type { ApiGame } from '../../types';
 
 const makeApiGame = (state: ApiGame['status']['state'], score: ApiGame['status']['score']): ApiGame => ({
@@ -24,5 +25,25 @@ describe('read API compatibility view model', () => {
     const game = toViewGame(makeApiGame('final', null));
     expect(game.homeScore).toBeNull();
     expect(game.awayScore).toBeNull();
+  });
+
+  it('keeps rating states explicit and maps only confirmed/provisional scores', () => {
+    const game = makeApiGame('final', { home: 3, away: 0 });
+    expect(toViewGame(game).rating.label).toBe('Rating pending');
+    expect(toViewGame({ ...game, rating: { ...game.rating, state: 'unavailable' } }).rating.score).toBeNull();
+    expect(toViewGame({ ...game, rating: { ...game.rating, state: 'provisional', score: 7.2 } }).rating.score).toBe(7.2);
+  });
+
+  it('formats kickoff in the requested zone, including DST and an explicit zone label', () => {
+    const kickoff = formatKickoff('2026-03-08T10:30:00Z', 'America/Los_Angeles');
+    expect(kickoff.time).toMatch(/3:30/);
+    expect(kickoff.zone).toBe('PDT');
+    expect(formatKickoff('2026-03-08T10:30:00Z', 'America/New_York').zone).toBe('EDT');
+  });
+
+  it('uses a deterministic unknown kickoff and local logo fallback', () => {
+    expect(formatKickoff(null).time).toBe('Kickoff time TBD');
+    expect(getTeamLogoUrl({ id: 'unknown', logoKey: 'historical' })).toBeNull();
+    expect(getTeamLogoUrl({ id: '26', logoKey: 'sea' })).toBe('/team-logos/sea.svg');
   });
 });

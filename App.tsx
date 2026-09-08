@@ -1,49 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Header from './components/Header';
 import GameCard from './components/GameCard';
-import type { ApiGame, ApiRecord, ApiTeam, BootstrapResponse, Game, GameRecordSnapshots, SeasonSnapshotResponse, SeasonWeek, WeekSnapshotResponse } from './types';
+import type { BootstrapResponse, SeasonSnapshotResponse, SeasonWeek, WeekSnapshotResponse } from './types';
+import { toViewGame } from './services/gameViewModel';
 import { ReadApiClient, type ReadApiResponse } from './services/readApi';
 import { createRequestOwner, type RequestOwner } from './services/requestLifecycle';
 import { AlertCircle, Info, Loader2 } from 'lucide-react';
 import { getNextSeasonWeek, getPreviousSeasonWeek, getWeekInfo, isFirstKnownWeek, isLastKnownWeek, selectWeekAfterBootstrapRefresh } from './utils/scheduleWeek';
 
-const apiGameStateLabel: Record<ApiGame['status']['state'], string> = { scheduled: 'Scheduled', in_progress: 'In Progress', final: 'Final', delayed: 'Delayed', postponed: 'Postponed', cancelled: 'Cancelled' };
-const isValidDate = (value: string | null): value is string => value !== null && Number.isFinite(new Date(value).getTime());
-const formatKickoff = (kickoffAt: string | null): { time: string; day: string; date: string } => {
-  if (!isValidDate(kickoffAt)) return { time: 'Time TBD', day: '', date: 'Date TBD' };
-  const date = new Date(kickoffAt);
-  return {
-    time: new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(date),
-    day: new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(date).toUpperCase(),
-    date: new Intl.DateTimeFormat(undefined, { month: 'numeric', day: 'numeric' }).format(date),
-  };
-};
-const toLegacyRecord = (record: ApiRecord | null) => record ? ({ record: { wins: record.wins, losses: record.losses, ties: record.ties }, scope: record.scope }) : null;
-const toLegacySnapshots = (team: ApiTeam): GameRecordSnapshots | null => {
-  const pregame = toLegacyRecord(team.pregameRecord);
-  if (!pregame) return null;
-  const postgame = toLegacyRecord(team.postgameRecord);
-  return postgame ? { pregame, postgame } : { pregame };
-};
-
-/** Compatibility view model for the existing card; C2 will make this mapping display-native. */
-export const toViewGame = (apiGame: ApiGame): Game => {
-  const kickoff = formatKickoff(apiGame.kickoffAt);
-  const score = apiGame.status.score;
-  const ratingScore = apiGame.rating.state === 'confirmed' || apiGame.rating.state === 'provisional' ? apiGame.rating.score : null;
-  const isUpcoming = apiGame.status.state === 'scheduled' || apiGame.status.state === 'postponed' || apiGame.status.state === 'cancelled';
-  const isLive = apiGame.status.state === 'in_progress' || apiGame.status.state === 'delayed';
-  return {
-    id: apiGame.id, homeTeam: apiGame.home.displayName, awayTeam: apiGame.away.displayName,
-    homeTeamLogo: undefined, awayTeamLogo: undefined, homeScore: score?.home ?? null, awayScore: score?.away ?? null,
-    homeRecord: toLegacySnapshots(apiGame.home), awayRecord: toLegacySnapshots(apiGame.away),
-    status: apiGame.status.detail ?? apiGameStateLabel[apiGame.status.state], kickoffTime: kickoff.time,
-    dayOfWeek: kickoff.day, dateLabel: kickoff.date, seasonWeek: apiGame.seasonWeek,
-    excitementScore: ratingScore, isEstimated: apiGame.rating.state === 'provisional',
-    spoilerData: { homeScore: score?.home ?? null, awayScore: score?.away ?? null, summary: '' },
-    broadcaster: apiGame.broadcaster ?? undefined, isUpcoming, isLive, odds: apiGame.odds?.details ?? undefined,
-  };
-};
+export { toViewGame } from './services/gameViewModel';
 
 const weekKey = (week: SeasonWeek | null): string => week ? `${week.season}/${week.phase}/${week.week}` : '';
 const getErrorMessage = (error: unknown, fallback: string): string => error instanceof Error && error.message ? error.message : fallback;
@@ -144,8 +109,8 @@ const App: React.FC = () => {
   const weeklySnapshot = selectedWeekKey ? weeklySnapshots[selectedWeekKey] ?? null : null;
   const seasonSnapshot = bootstrap ? seasonSnapshots[bootstrap.activeSeason] ?? null : null;
   const displayedGames = viewMode === 'season'
-    ? (seasonSnapshot?.games ?? []).filter((game) => game.seasonWeek.phase !== 'preseason').filter((game) => (game.rating.state === 'confirmed' || game.rating.state === 'provisional') && game.rating.score !== null).slice(0, 10).map(toViewGame)
-    : (weeklySnapshot?.games ?? []).map(toViewGame);
+    ? (seasonSnapshot?.games ?? []).filter((game) => game.seasonWeek.phase !== 'preseason' && game.status.state === 'final').filter((game) => (game.rating.state === 'confirmed' || game.rating.state === 'provisional') && game.rating.score !== null).slice(0, 10).map((game) => toViewGame(game))
+    : (weeklySnapshot?.games ?? []).map((game) => toViewGame(game));
   const loading = viewMode === 'season' ? seasonLoading : weeklyLoading;
   const error = viewMode === 'season' ? seasonError : weeklyError;
   const hasData = viewMode === 'season' ? seasonSnapshot !== null : weeklySnapshot !== null;
@@ -167,10 +132,10 @@ const App: React.FC = () => {
     <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6 relative">
       <div className="flex justify-between items-end mb-4 px-1"><h2 className="text-lg font-bold text-white">{viewMode === 'weekly' ? 'Game Rankings' : 'Season Leaders'}</h2><button onClick={() => setShowRatingInfo(!showRatingInfo)} className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-neutral-500 hover:text-blue-400 transition-colors"><Info className="w-3 h-3" />Rating Info</button></div>
       {showRatingInfo && <div className="mb-6 bg-neutral-800/50 border border-white/10 rounded-xl p-4 text-sm text-neutral-300"><h3 className="font-bold text-white mb-2">How Games Are Rated</h3><p className="text-xs opacity-80">Ratings are calculated from the read API snapshot.</p></div>}
-      {bootstrapError && <div className="mb-4 rounded-lg border border-yellow-900/50 bg-yellow-900/10 p-3 text-sm text-yellow-200">Catalogue refresh failed; showing the last usable catalogue. <button className="underline" onClick={refreshBootstrap}>Retry</button></div>}
+      {bootstrapError && <div role="status" className="mb-4 rounded-lg border border-yellow-900/50 bg-yellow-900/10 p-3 text-sm text-yellow-200">Catalogue refresh failed; showing the last usable catalogue. <button type="button" className="underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400" onClick={refreshBootstrap}>Retry</button></div>}
       {loading && !hasData && <div className="flex flex-col items-center justify-center py-24 gap-4 opacity-60"><Loader2 className="w-8 h-8 text-blue-500 animate-spin" /><p className="text-xs tracking-widest uppercase">{viewMode === 'season' ? 'Analyzing Season Data...' : `Loading ${currentWeek.label}...`}</p></div>}
       {!loading && error && !hasData && <div className="bg-red-900/10 border border-red-900/50 rounded-xl p-6 text-center"><AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" /><p className="text-red-200">{error}</p><button className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold" onClick={() => (viewMode === 'weekly' ? weeklyOwner.current.retry() : seasonOwner.current.retry())}>Retry</button></div>}
-      {hasData && error && <div className="mb-3 rounded-lg border border-yellow-900/50 bg-yellow-900/10 p-3 text-sm text-yellow-200">Showing stale data: {error}</div>}
+      {hasData && error && <div role="status" className="mb-3 rounded-lg border border-yellow-900/50 bg-yellow-900/10 p-3 text-sm text-yellow-200">Showing stale data: {error}</div>}
       {hasData && <div className="flex flex-col gap-3">{displayedGames.length === 0 ? <div className="text-center py-20 text-neutral-500 text-sm">{viewMode === 'season' ? 'No eligible rated games yet.' : 'No games found.'}</div> : displayedGames.map((game) => <GameCard key={game.id} game={game} showWeekContext={viewMode === 'season'} />)}</div>}
       {viewMode === 'weekly' && (isFirstKnownWeek(selectedWeek, knownWeeks) || isLastKnownWeek(selectedWeek, knownWeeks)) && <span className="sr-only">{isFirstKnownWeek(selectedWeek, knownWeeks) ? 'At first known week.' : 'At last known week.'}</span>}
     </main>
