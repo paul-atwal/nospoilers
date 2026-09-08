@@ -47,7 +47,13 @@ export const getWeekInfo = (seasonWeek: SeasonWeek): WeekInfo => {
 
 export const getPreviousSeasonWeek = (
   seasonWeek: SeasonWeek,
+  knownWeeks?: readonly SeasonWeek[],
 ): SeasonWeek => {
+  if (knownWeeks) {
+    const index = knownWeeks.findIndex((candidate) => sameSeasonWeek(candidate, seasonWeek));
+    if (index > 0) return knownWeeks[index - 1];
+    return seasonWeek;
+  }
   const { season, phase, week } = seasonWeek;
   if (week > 1) return makeSeasonWeek(season, phase, week - 1);
 
@@ -74,7 +80,13 @@ export const getPreviousSeasonWeek = (
 
 export const getNextSeasonWeek = (
   seasonWeek: SeasonWeek,
+  knownWeeks?: readonly SeasonWeek[],
 ): SeasonWeek => {
+  if (knownWeeks) {
+    const index = knownWeeks.findIndex((candidate) => sameSeasonWeek(candidate, seasonWeek));
+    if (index >= 0 && index < knownWeeks.length - 1) return knownWeeks[index + 1];
+    return seasonWeek;
+  }
   const { season, phase, week } = seasonWeek;
   if (week < PHASE_WEEK_COUNTS[phase]) {
     return makeSeasonWeek(season, phase, week + 1);
@@ -88,6 +100,22 @@ export const getNextSeasonWeek = (
   }
   return makeSeasonWeek(season + 1, 'preseason', 1);
 };
+
+export const sameSeasonWeek = (left: SeasonWeek, right: SeasonWeek): boolean => (
+  left.season === right.season
+    && left.phase === right.phase
+    && left.week === right.week
+);
+
+export const isFirstKnownWeek = (
+  seasonWeek: SeasonWeek,
+  knownWeeks: readonly SeasonWeek[],
+): boolean => knownWeeks.length > 0 && sameSeasonWeek(knownWeeks[0], seasonWeek);
+
+export const isLastKnownWeek = (
+  seasonWeek: SeasonWeek,
+  knownWeeks: readonly SeasonWeek[],
+): boolean => knownWeeks.length > 0 && sameSeasonWeek(knownWeeks[knownWeeks.length - 1], seasonWeek);
 
 export const getRankingWeeksThrough = (
   currentWeek: SeasonWeek,

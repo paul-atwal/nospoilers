@@ -13,6 +13,97 @@ export interface SeasonWeek {
   readonly week: number;
 }
 
+/** The typed projection returned by the provider-free read API. */
+export interface ApiRecord {
+  readonly wins: number;
+  readonly losses: number;
+  readonly ties: number;
+  readonly scope: RecordScope;
+  readonly snapshotAt?: string | null;
+}
+
+export interface ApiTeam {
+  readonly id: string;
+  readonly displayName: string;
+  readonly abbreviation: string;
+  readonly logoKey: string | null;
+  readonly pregameRecord: ApiRecord | null;
+  readonly postgameRecord: ApiRecord | null;
+}
+
+export type ApiGameState =
+  | 'scheduled'
+  | 'in_progress'
+  | 'final'
+  | 'delayed'
+  | 'postponed'
+  | 'cancelled';
+
+export interface ApiGameStatus {
+  readonly state: ApiGameState;
+  readonly detail: string | null;
+  readonly period: number | null;
+  readonly clock: string | null;
+  readonly score: { readonly home: number; readonly away: number } | null;
+}
+
+export type ApiRatingState = 'pending' | 'provisional' | 'confirmed' | 'unavailable';
+
+export interface ApiRating {
+  readonly state: ApiRatingState;
+  readonly score: number | null;
+  readonly source: string | null;
+  readonly modelVersion: string | null;
+  readonly calculatedAt: string | null;
+  readonly confirmedAt: string | null;
+  readonly confirmationSupported: boolean;
+  readonly confirmationWorkRemains: boolean;
+}
+
+export interface ApiFreshness {
+  readonly scheduleCheckedAt: string | null;
+  readonly scheduleUpdatedAt: string | null;
+  readonly liveSourceCheckedAt: string | null;
+  readonly liveStateUpdatedAt: string | null;
+}
+
+export interface ApiGame {
+  readonly id: string;
+  readonly espnId: string;
+  readonly seasonWeek: SeasonWeek;
+  readonly kickoffAt: string | null;
+  readonly home: ApiTeam;
+  readonly away: ApiTeam;
+  readonly status: ApiGameStatus;
+  readonly broadcaster: string | null;
+  readonly odds: { readonly details: string | null; readonly updatedAt: string | null } | null;
+  readonly rating: ApiRating;
+  readonly freshness: ApiFreshness;
+}
+
+export interface BootstrapResponse {
+  readonly activeSeason: number;
+  readonly currentWeek: SeasonWeek;
+  readonly knownWeeks: readonly SeasonWeek[];
+  readonly calendarVersion: string;
+  readonly pollAfterSeconds: number | null;
+}
+
+export interface WeekSnapshotResponse {
+  readonly season: number;
+  readonly week: SeasonWeek;
+  readonly snapshotAsOf: string | null;
+  readonly pollAfterSeconds: number | null;
+  readonly games: readonly ApiGame[];
+}
+
+export interface SeasonSnapshotResponse {
+  readonly season: number;
+  readonly snapshotAsOf: string | null;
+  readonly pollAfterSeconds: number | null;
+  readonly games: readonly ApiGame[];
+}
+
 export interface WeekInfo {
   readonly seasonWeek: SeasonWeek;
   readonly title: string;

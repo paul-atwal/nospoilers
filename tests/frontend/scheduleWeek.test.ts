@@ -127,4 +127,20 @@ describe('season-week navigation', () => {
     expect(getCurrentNflSeason(new Date(2027, 0, 15))).toBe(2026);
     expect(getCurrentNflSeason(new Date(2027, 7, 1))).toBe(2027);
   });
+
+  it('navigates only within the ordered API catalogue at irregular season boundaries', () => {
+    const catalogue = [
+      { season: 2020, phase: 'preseason' as const, week: 5 },
+      { season: 2020, phase: 'regular_season' as const, week: 1 },
+      { season: 2020, phase: 'regular_season' as const, week: 17 },
+      { season: 2020, phase: 'postseason' as const, week: 5 },
+      { season: 2021, phase: 'preseason' as const, week: 1 },
+    ];
+
+    expect(getNextSeasonWeek(catalogue[0], catalogue)).toEqual(catalogue[1]);
+    expect(getPreviousSeasonWeek(catalogue[0], catalogue)).toEqual(catalogue[0]);
+    expect(getNextSeasonWeek(catalogue[3], catalogue)).toEqual(catalogue[4]);
+    expect(getPreviousSeasonWeek(catalogue[4], catalogue)).toEqual(catalogue[3]);
+    expect(getNextSeasonWeek(catalogue[4], catalogue)).toEqual(catalogue[4]);
+  });
 });
