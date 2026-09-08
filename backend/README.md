@@ -10,6 +10,9 @@ Redis initialization. The later HTTP adapter exposes these operations at
 `GET /api/v1/bootstrap`, `GET /api/v1/weeks/{season}/{phase}/{week}`, and
 `GET /api/v1/seasons/{season}`.
 
+See [API.md](API.md) for the durable transport contract, response semantics,
+ETag/cache behavior, CORS, Lambda environment, and calendar rollover procedure.
+
 The calendar is the 2026 schedule observed from ESPN's normalized scoreboard
 calendar, verified 2026-09-07:
 `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard`.
@@ -51,6 +54,18 @@ python -m pip install -r backend/requirements-sync.txt
 # Scheduled nflverse reconciliation
 python -m pip install -r backend/requirements-reconcile.txt
 ```
+
+To run the read API locally with DynamoDB Local (from the repository root):
+
+```bash
+export NOSPOIL_GAMES_TABLE=nospoil-games
+export NOSPOIL_DYNAMODB_LOCAL_ENDPOINT=http://127.0.0.1:8000
+export AWS_DEFAULT_REGION=us-west-2 AWS_ACCESS_KEY_ID=local AWS_SECRET_ACCESS_KEY=local
+export NOSPOIL_FRONTEND_ORIGINS=http://localhost:3000
+uvicorn backend.nospoil_nfl.api.local:app --reload
+```
+
+The deployed read Lambda handler is `backend.nospoil_nfl.api.handler.lambda_handler`.
 
 To update the shared resolved graph deterministically, use Python 3.11 on
 Linux with the pinned pip-tools version and review the resulting diff:
