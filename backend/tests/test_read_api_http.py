@@ -9,9 +9,16 @@ from fastapi.testclient import TestClient
 from backend.nospoil_nfl.api.http import create_app, parse_origins
 from backend.nospoil_nfl.api.calendar import SeasonCalendar
 from backend.nospoil_nfl.api.snapshots import ReadSnapshotService, SnapshotResult
-from backend.nospoil_nfl.game.models import SeasonPhase, SeasonWeek
+from backend.nospoil_nfl.game.models import (
+    GameState,
+    GameStatus,
+    RatingState,
+    Score,
+    SeasonPhase,
+    SeasonWeek,
+)
 from backend.nospoil_nfl.game.read_repository import GameRepositoryError
-from backend.tests.test_read_api_snapshots import game
+from backend.tests.test_read_api_snapshots import _final_rating, game
 
 
 class FakeService:
@@ -69,6 +76,8 @@ def test_real_http_service_reads_saved_previous_season_week_and_season():
     saved = game(
         "historic",
         season_week=SeasonWeek(2025, SeasonPhase.POSTSEASON, 5),
+        status=GameStatus(GameState.FINAL, score=Score(7, 3)),
+        rating=_final_rating(RatingState.CONFIRMED),
     )
 
     class Reader:

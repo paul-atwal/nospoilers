@@ -178,38 +178,6 @@ def test_known_empty_history_reads_once_but_unsupported_values_do_not_read() -> 
     assert repository.season_calls == 1
 
 
-@pytest.mark.parametrize(
-    "historical_game",
-    [
-        game(
-            "scheduled-history",
-            season_week=SeasonWeek(2025, SeasonPhase.REGULAR_SEASON, 1),
-            status=GameStatus(GameState.SCHEDULED),
-        ),
-        game(
-            "live-history",
-            season_week=SeasonWeek(2025, SeasonPhase.REGULAR_SEASON, 1),
-            status=GameStatus(GameState.IN_PROGRESS, period=2, score=Score(7, 3)),
-        ),
-        game(
-            "pending-history",
-            season_week=SeasonWeek(2025, SeasonPhase.REGULAR_SEASON, 1),
-            status=GameStatus(GameState.FINAL, score=Score(7, 3)),
-        ),
-    ],
-    ids=lambda historical_game: str(historical_game.game_id),
-)
-def test_historical_games_never_request_polling(historical_game: Game) -> None:
-    repository = FakeRepository([historical_game])
-    snapshot_service = service(repository)
-
-    week = snapshot_service.week_snapshot(historical_game.season_week)
-    season = snapshot_service.season_snapshot(historical_game.season_week.season)
-
-    assert week["pollAfterSeconds"] is None
-    assert season["pollAfterSeconds"] is None
-
-
 def test_catalogue_rollover_retains_old_weeks_and_adds_active_entries() -> None:
     old = SeasonCalendar().known_weeks
     entries = tuple(
@@ -376,6 +344,134 @@ def _final_rating(state: RatingState, *, score: float = 7.0) -> GameRating:
             RatingRetry(attempt_count=1, last_error="provider failed"),
         )
     return GameRating(state, RatingRetry())
+
+
+@pytest.mark.parametrize(
+    ("label", "status", "rating", "season_week"),
+    [
+        (
+            "confirmed-history",
+            GameStatus(GameState.FINAL, score=Score(7, 3)),
+            RatingState.CONFIRMED,
+            SeasonWeek(2025, SeasonPhase.REGULAR_SEASON, 1),
+        ),
+        (
+            "cancelled-history",
+            GameStatus(GameState.CANCELLED),
+            None,
+            SeasonWeek(2025, SeasonPhase.REGULAR_SEASON, 1),
+        ),
+        (
+            "unsupported-exhausted-history",
+            GameStatus(GameState.FINAL, score=Score(7, 3)),
+            RatingState.UNAVAILABLE,
+            SeasonWeek(2025, SeasonPhase.POSTSEASON, 4),
+        ),
+    ],
+)
+def test_completed_or_exhausted_historical_games_stop_polling(
+    label: str,
+    status: GameStatus,
+    rating: RatingState | None,
+    season_week: SeasonWeek,
+) -> None:
+    stored = game(
+        label,
+        season_week=season_week,
+        status=status,
+        rating=_final_rating(rating) if rating is not None else None,
+    )
+    snapshot_service = service(FakeRepository([stored]))
+
+    assert snapshot_service.week_snapshot(season_week)["pollAfterSeconds"] is None
+    assert snapshot_service.season_snapshot(season_week.season)["pollAfterSeconds"] is None
+
+
+@pytest.mark.parametrize(
+    ("status", "rating", "expected"),
+    [
+        (GameStatus(GameState.IN_PROGRESS, period=1, score=Score(7, 3)), None, 30),
+        (GameStatus(GameState.POSTPONED), None, 900),
+        (
+            GameStatus(GameState.FINAL, score=Score(7, 3)),
+            RatingState.PROVISIONAL,
+            3600,
+        ),
+        (
+            GameStatus(GameState.FINAL, score=Score(7, 3)),
+            RatingState.UNAVAILABLE,
+            3600,
+        ),
+    ],
+)
+def test_unfinished_previous_week_uses_per_game_polling(
+    status: GameStatus,
+    rating: RatingState | None,
+    expected: int,
+) -> None:
+    previous_week = SeasonWeek(2026, SeasonPhase.REGULAR_SEASON, 1)
+    stored = game(
+        "previous-week",
+        season_week=previous_week,
+        status=status,
+        rating=_final_rating(rating) if rating is not None else None,
+        kickoff_at=(
+            None
+            if status.state is GameState.POSTPONED
+            else datetime(2026, 9, 10, tzinfo=UTC)
+        ),
+    )
+    snapshot_service = service(
+        FakeRepository([stored]), datetime(2026, 9, 20, tzinfo=UTC)
+    )
+
+    assert snapshot_service.week_snapshot(previous_week)["pollAfterSeconds"] == expected
+    assert snapshot_service.season_snapshot(2026)["pollAfterSeconds"] == expected
+
+
+@pytest.mark.parametrize("rating", [RatingState.PROVISIONAL, RatingState.UNAVAILABLE])
+def test_prior_season_supported_confirmation_work_still_polls(
+    rating: RatingState,
+) -> None:
+    prior_week = SeasonWeek(2025, SeasonPhase.REGULAR_SEASON, 1)
+    stored = game(
+        "prior-season-confirmation",
+        season_week=prior_week,
+        status=GameStatus(GameState.FINAL, score=Score(7, 3)),
+        rating=_final_rating(rating),
+    )
+    snapshot_service = service(
+        FakeRepository([stored]), datetime(2026, 9, 20, tzinfo=UTC)
+    )
+
+    assert snapshot_service.week_snapshot(prior_week)["pollAfterSeconds"] == 3600
+    assert snapshot_service.season_snapshot(2025)["pollAfterSeconds"] == 3600
+
+
+def test_week_boundary_changes_empty_advice_but_not_stored_work_advice() -> None:
+    week = SeasonWeek(2026, SeasonPhase.REGULAR_SEASON, 1)
+    boundary = datetime(2026, 9, 16, 7, tzinfo=UTC)
+    live = game(
+        "boundary-live",
+        season_week=week,
+        status=GameStatus(GameState.IN_PROGRESS, period=2, score=Score(7, 3)),
+    )
+
+    for now in (boundary - timedelta(microseconds=1), boundary):
+        nonempty = service(FakeRepository([live]), now)
+        assert nonempty.week_snapshot(week)["pollAfterSeconds"] == 30
+        assert nonempty.season_snapshot(2026)["pollAfterSeconds"] == 30
+
+    assert (
+        service(FakeRepository([]), boundary - timedelta(microseconds=1))
+        .week_snapshot(week)["pollAfterSeconds"]
+        == 300
+    )
+    assert (
+        service(FakeRepository([]), boundary)
+        .week_snapshot(week)["pollAfterSeconds"]
+        is None
+    )
 
 
 @pytest.mark.parametrize(

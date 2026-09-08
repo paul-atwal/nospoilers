@@ -321,12 +321,6 @@ class ReadSnapshotService:
         season_week: SeasonWeek | None,
         season: int | None,
     ) -> int | None:
-        if season is not None and season != self.calendar.active_season:
-            return None
-        if season_week is not None and not self.calendar.is_current_or_future(
-            season_week, now
-        ):
-            return None
         if games:
             values = [value for game in games if (value := _poll_class(game, now)) is not None]
             return min(values) if values else None

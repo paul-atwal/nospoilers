@@ -24,10 +24,14 @@ then game ID. Season order is rated first by score descending, then kickoff and
 game ID; unrated games follow by kickoff and ID. One application/repository
 operation consumes all results; a DynamoDB GSI query may internally use several
 paginated AWS requests. Results are eventually consistent, not an atomic
-multi-game view. Historical reads always return `pollAfterSeconds: null`;
-known-empty historical weeks query once and return `200` with empty games,
-while unsupported identities return `404` before any repository call. Rollover
-appends a new active season without removing prior catalogue entries.
+multi-game view. Nonempty snapshots derive `pollAfterSeconds` from stored game
+state and remaining rating work regardless of calendar age, so unfinished
+previous-week or prior-season work stays discoverable. Completed games and
+unsupported exhausted ratings stop polling through that per-game policy.
+Known-empty historical weeks return `pollAfterSeconds: null`, query once, and
+return `200` with empty games, while unsupported identities return `404` before
+any repository call. Rollover appends a new active season without removing
+prior catalogue entries.
 
 Each browser route is one client request and one application/repository
 operation; the client does not make per-game requests.
