@@ -248,14 +248,14 @@ def test_catalogue_active_season_must_exactly_match_timed_entries() -> None:
     )
     old = SeasonCalendar().known_weeks
 
-    with pytest.raises(CalendarError, match="exactly match"):
+    with pytest.raises(CalendarError, match="exactly match ordered"):
         SeasonCalendar(
             entries,
             active_season=2027,
             season_end=datetime(2027, 10, 1, tzinfo=UTC),
             catalogue=old + (entries[0].season_week,),
         )
-    with pytest.raises(CalendarError, match="exactly match"):
+    with pytest.raises(CalendarError, match="exactly match ordered"):
         SeasonCalendar(
             entries,
             active_season=2027,
@@ -263,6 +263,46 @@ def test_catalogue_active_season_must_exactly_match_timed_entries() -> None:
             catalogue=old
             + tuple(entry.season_week for entry in entries)
             + (SeasonWeek(2027, SeasonPhase.REGULAR_SEASON, 3),),
+        )
+
+
+def test_rollover_rejects_a_catalogue_that_drops_supported_history() -> None:
+    active = CalendarEntry(
+        SeasonWeek(2027, SeasonPhase.REGULAR_SEASON, 1),
+        datetime(2027, 9, 1, tzinfo=UTC),
+    )
+
+    with pytest.raises(CalendarError, match="retain the supported historical"):
+        SeasonCalendar(
+            (active,),
+            active_season=2027,
+            season_end=datetime(2027, 10, 1, tzinfo=UTC),
+            catalogue=(active.season_week,),
+        )
+
+
+@pytest.mark.parametrize("entry_order", ["reordered", "duplicate"])
+def test_active_timed_entries_must_match_catalogue_order(entry_order: str) -> None:
+    first_week = SeasonWeek(2027, SeasonPhase.REGULAR_SEASON, 1)
+    second_week = SeasonWeek(2027, SeasonPhase.REGULAR_SEASON, 2)
+    if entry_order == "reordered":
+        entries = (
+            CalendarEntry(second_week, datetime(2027, 9, 1, tzinfo=UTC)),
+            CalendarEntry(first_week, datetime(2027, 9, 2, tzinfo=UTC)),
+        )
+    else:
+        entries = (
+            CalendarEntry(first_week, datetime(2027, 9, 1, tzinfo=UTC)),
+            CalendarEntry(first_week, datetime(2027, 9, 2, tzinfo=UTC)),
+        )
+    catalogue = SeasonCalendar().known_weeks + (first_week, second_week)
+
+    with pytest.raises(CalendarError, match="exactly match ordered"):
+        SeasonCalendar(
+            entries,
+            active_season=2027,
+            season_end=datetime(2027, 10, 1, tzinfo=UTC),
+            catalogue=catalogue,
         )
 
 

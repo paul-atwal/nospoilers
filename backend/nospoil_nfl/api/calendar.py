@@ -199,13 +199,22 @@ class SeasonCalendar:
         )
         if canonical != self._catalogue:
             raise CalendarError("catalogue must be in canonical season/phase/week order")
-        active_weeks = frozenset(entry.season_week for entry in self._entries)
-        catalogued_active_weeks = frozenset(
+        required_history = tuple(
+            week
+            for week in _default_catalogue()
+            if week.season < self.active_season
+        )
+        if self._catalogue[: len(required_history)] != required_history:
+            raise CalendarError(
+                "catalogue must retain the supported historical prefix"
+            )
+        active_weeks = tuple(entry.season_week for entry in self._entries)
+        catalogued_active_weeks = tuple(
             week for week in self._catalogue if week.season == self.active_season
         )
         if catalogued_active_weeks != active_weeks:
             raise CalendarError(
-                "catalogue active season must exactly match active calendar entries"
+                "catalogue active season must exactly match ordered active entries"
             )
         self._catalogue_set = frozenset(self._catalogue)
         self._readable_seasons = frozenset(
