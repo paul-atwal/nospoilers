@@ -1,5 +1,21 @@
 # NoSpoil NFL backend
 
+## Provider-free read API foundation
+
+The read API foundation in `nospoil_nfl/api/` owns the spoiler-free snapshot
+projection, polling advice, ETag material, and the checked-in 2026 season
+calendar. It is safe for the HTTP read process to import: it performs no
+provider requests, downloads, calculations, writes, scheduler startup, or
+Redis initialization. The later HTTP adapter exposes these operations at
+`GET /api/v1/bootstrap`, `GET /api/v1/weeks/{season}/{phase}/{week}`, and
+`GET /api/v1/seasons/{season}`.
+
+The calendar is the 2026 schedule observed from ESPN's normalized scoreboard
+calendar, verified 2026-09-07:
+`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard`.
+Its source-known week boundaries and `espn-2026-09-07` version are checked in
+in `nospoil_nfl/api/calendar.py`; rollover is a reviewed calendar release.
+
 This FastAPI service calculates spoiler-free excitement scores for completed NFL games.
 
 ## Data flow
