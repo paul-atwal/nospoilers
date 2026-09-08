@@ -20,6 +20,37 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
+Dependency installs are resolved from one Python 3.11/Linux lock graph. Use
+the bounded set that matches the process you are running:
+
+```bash
+# Legacy full backend / Render build (Node still uses npm ci at the repository root)
+python -m pip install -r backend/requirements.txt
+# Development and CI
+python -m pip install -r backend/requirements-dev.txt
+# Read Lambda
+python -m pip install -r backend/requirements-read.txt
+# ESPN sync Lambda
+python -m pip install -r backend/requirements-sync.txt
+# Scheduled nflverse reconciliation
+python -m pip install -r backend/requirements-reconcile.txt
+```
+
+To update the shared resolved graph deterministically, use Python 3.11 on
+Linux with the pinned pip-tools version and review the resulting diff:
+
+```bash
+python3.11 -m pip install 'pip-tools==7.5.2'
+cd backend
+python3.11 -m piptools compile --resolver=backtracking --strip-extras \
+  --output-file constraints.txt constraints.in
+```
+
+All install files apply `constraints.txt`; an incompatible dependency fails
+the install rather than silently resolving outside the shared graph. The
+constraints file intentionally has no hashes so Linux deployment resolution
+remains portable across supported architectures.
+
 The service runs at `http://localhost:8000`.
 
 You can also use the helper script:

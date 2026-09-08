@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+boto3
+nflreadpy
+pandas
+pyarrow
+requests
+redis
+psycopg2-binary

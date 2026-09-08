@@ -1,8 +1,3 @@
-fastapi
-uvicorn[standard]
-boto3
-nflreadpy
-pandas
-pyarrow
-requests
-redis
+# Legacy full backend/Render install. Pins are shared in constraints.txt.
+-c constraints.txt
+-r requirements.in
