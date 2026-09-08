@@ -29,10 +29,10 @@ npm run dev
 
 The frontend runs at `http://localhost:3000`.
 
-Set `VITE_API_URL` to the API origin or path when the read API is not same-origin (for local development use `http://localhost:8001/api`):
+Set `VITE_API_URL` to the API origin or base prefix (for local development use `http://127.0.0.1:8001`):
 
 ```text
-VITE_API_URL=https://your-api.example.com/api
+VITE_API_URL=https://your-api.example.com
 ```
 
 ### Backend
@@ -48,10 +48,12 @@ cd backend
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-uvicorn main:app --reload
+uvicorn main:app --reload --port 8001
 ```
 
-The backend runs at `http://localhost:8000`.
+The read API runs at `http://127.0.0.1:8001` and serves `/api/v1/bootstrap`, `/api/v1/weeks/...`, and `/api/v1/seasons/...`.
+
+See [backend/API.md](backend/API.md) for the local DynamoDB/read-API recipe and response contract.
 
 ## Environment variables
 

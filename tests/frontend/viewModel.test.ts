@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { selectBestSeasonGames } from '../../App';
 import { formatKickoff, toViewGame } from '../../services/gameViewModel';
-import { getTeamLogoUrl } from '../../services/teamAssets';
+import { getKnownTeamAssets, getTeamLogoUrl } from '../../services/teamAssets';
 import type { ApiGame } from '../../types';
 
 const makeApiGame = (state: ApiGame['status']['state'], score: ApiGame['status']['score']): ApiGame => ({
@@ -44,6 +45,16 @@ describe('read API compatibility view model', () => {
   it('uses a deterministic unknown kickoff and local logo fallback', () => {
     expect(formatKickoff(null).time).toBe('Kickoff time TBD');
     expect(getTeamLogoUrl({ id: 'unknown', logoKey: 'historical' })).toBeNull();
-    expect(getTeamLogoUrl({ id: '26', logoKey: 'sea' })).toBe('/team-logos/sea.svg');
+    expect(getTeamLogoUrl({ id: '26', logoKey: 'sea' })).toBe('/team-logos/26.svg');
+    expect(getKnownTeamAssets()).toHaveLength(32);
+    expect(getTeamLogoUrl({ id: '17', logoKey: '17' })).toBe('/team-logos/17.svg');
+  });
+
+  it('keeps API ranking order while excluding preseason/upcoming/unrated games and capping at ten', () => {
+    const eligible = Array.from({ length: 12 }, (_, index) => ({ ...makeApiGame('final', { home: index, away: 0 }), id: `eligible-${index}`, seasonWeek: { season: 2026, phase: 'regular_season' as const, week: index + 1 }, rating: { ...makeApiGame('final', { home: 0, away: 0 }).rating, state: 'confirmed' as const, score: 9 - index / 10 } }));
+    const result = selectBestSeasonGames([{ ...eligible[0], id: 'preseason', seasonWeek: { season: 2026, phase: 'preseason', week: 1 } }, ...eligible, { ...eligible[0], id: 'upcoming', status: { ...eligible[0].status, state: 'scheduled' } }]);
+    expect(result).toHaveLength(10);
+    expect(result[0].id).toBe('eligible-0');
+    expect(result.at(-1)?.id).toBe('eligible-9');
   });
 });

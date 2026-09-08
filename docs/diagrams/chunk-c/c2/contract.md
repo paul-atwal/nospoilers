@@ -7,7 +7,7 @@ C2 finishes the frontend migration by replacing C1's compatibility mapping with 
 ## Target files and ownership
 
 - `services/gameViewModel.ts` (or an equivalently narrow module) maps `ApiGame` into a presentation record. It owns status labels, explicit rating presentation, independent pregame/postgame records, kickoff formatting, optional score handling, and team display/logo lookup. It does not derive source records, rankings, or outcomes.
-- `services/teamAssets.ts` owns a versioned map keyed by stable team ID/logo key and returns a local asset URL or `null`. Unknown and historical identities use API display name/abbreviation text fallbacks. `public/team-logos/` contains only bundled assets; a provenance file records retrieval source/date and identifiers. No runtime ESPN or remote image URL is allowed.
+- `services/teamAssets.ts` owns a versioned map keyed by stable numeric team ID/logo key and returns a local SVG asset URL or `null`. Unknown and historical identities use API display name/abbreviation text fallbacks. `public/team-logos/` contains only bundled SVG assets; a provenance file records retrieval source/date and identifiers. No runtime ESPN or remote image URL is allowed.
 - `App.tsx` retains C1 request/selection ownership. It passes server-ordered weekly games through unchanged and, for active-season Best of Season, filters the API's deterministic order to the first ten eligible final regular/postseason games with explicit provisional/confirmed scores. It derives polling only from the full response envelope, never the visible top ten.
 - `components/Header.tsx` remains presentation-only. It uses native buttons with descriptive accessible names, native disabled states at catalogue ends, and visible `:focus-visible` treatment.
 - `components/GameCard.tsx` receives display-ready status, records, kickoff, rating, and optional scores. It owns only per-card reveal UI. Reveal is keyed to `game.id`, survives updates to that ID, and resets if the component receives another ID.
@@ -38,4 +38,3 @@ C2 finishes the frontend migration by replacing C1's compatibility mapping with 
 - Component tests for hidden/revealed/updated scores, identity reset, no hidden accessible leak, missing score, postgame record reveal, missing pregame, rating labels, image failure fallback, and keyboard activation/focus classes.
 - App-level tests for weekly order and active-season top-ten eligibility/order without altering envelope polling.
 - Focused C2 tests, then frontend tests, typecheck, build, and `git diff --check`.
-

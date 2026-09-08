@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Header from './components/Header';
 import GameCard from './components/GameCard';
-import type { BootstrapResponse, SeasonSnapshotResponse, SeasonWeek, WeekSnapshotResponse } from './types';
+import type { ApiGame, BootstrapResponse, SeasonSnapshotResponse, SeasonWeek, WeekSnapshotResponse } from './types';
 import { toViewGame } from './services/gameViewModel';
 import { ReadApiClient, type ReadApiResponse } from './services/readApi';
 import { createRequestOwner, type RequestOwner } from './services/requestLifecycle';
@@ -9,6 +9,11 @@ import { AlertCircle, Info, Loader2 } from 'lucide-react';
 import { getNextSeasonWeek, getPreviousSeasonWeek, getWeekInfo, isFirstKnownWeek, isLastKnownWeek, selectWeekAfterBootstrapRefresh } from './utils/scheduleWeek';
 
 export { toViewGame } from './services/gameViewModel';
+
+export const selectBestSeasonGames = (games: readonly ApiGame[]): readonly ApiGame[] => games
+  .filter((game) => game.seasonWeek.phase !== 'preseason' && game.status.state === 'final')
+  .filter((game) => (game.rating.state === 'confirmed' || game.rating.state === 'provisional') && game.rating.score !== null)
+  .slice(0, 10);
 
 const weekKey = (week: SeasonWeek | null): string => week ? `${week.season}/${week.phase}/${week.week}` : '';
 const getErrorMessage = (error: unknown, fallback: string): string => error instanceof Error && error.message ? error.message : fallback;
@@ -109,7 +114,7 @@ const App: React.FC = () => {
   const weeklySnapshot = selectedWeekKey ? weeklySnapshots[selectedWeekKey] ?? null : null;
   const seasonSnapshot = bootstrap ? seasonSnapshots[bootstrap.activeSeason] ?? null : null;
   const displayedGames = viewMode === 'season'
-    ? (seasonSnapshot?.games ?? []).filter((game) => game.seasonWeek.phase !== 'preseason' && game.status.state === 'final').filter((game) => (game.rating.state === 'confirmed' || game.rating.state === 'provisional') && game.rating.score !== null).slice(0, 10).map((game) => toViewGame(game))
+    ? selectBestSeasonGames(seasonSnapshot?.games ?? []).map((game) => toViewGame(game))
     : (weeklySnapshot?.games ?? []).map((game) => toViewGame(game));
   const loading = viewMode === 'season' ? seasonLoading : weeklyLoading;
   const error = viewMode === 'season' ? seasonError : weeklyError;
