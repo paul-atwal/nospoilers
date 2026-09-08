@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from datetime import UTC, datetime
+from ipaddress import IPv4Address, IPv6Address
 from typing import Callable
 from urllib.parse import urlparse
 
@@ -25,6 +26,48 @@ from .calendar import SeasonCalendar, UnknownSeasonError, UnknownSeasonWeekError
 from .snapshots import ReadSnapshotService
 
 
+def _canonical_origin(origin: str) -> str:
+    parsed = urlparse(origin)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.path
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or parsed.username is not None
+        or parsed.password is not None
+        or any(character.isspace() for character in origin)
+        or any(character in parsed.netloc for character in "@%*\\")
+    ):
+        raise ValueError
+
+    hostname = parsed.hostname
+    hostname.encode("ascii")
+    if ":" in hostname:
+        canonical_host = f"[{IPv6Address(hostname).compressed}]"
+    else:
+        if re.fullmatch(r"[0-9.]+", hostname):
+            canonical_host = str(IPv4Address(hostname))
+        else:
+            labels = hostname.split(".")
+            if any(
+                not label
+                or len(label) > 63
+                or not re.fullmatch(r"[a-z0-9-]+", label)
+                or label.startswith("-")
+                or label.endswith("-")
+                for label in labels
+            ):
+                raise ValueError
+            canonical_host = hostname
+
+    port = parsed.port
+    default_port = 80 if parsed.scheme == "http" else 443
+    canonical_port = "" if port is None or port == default_port else f":{port}"
+    return f"{parsed.scheme}://{canonical_host}{canonical_port}"
+
+
 def parse_origins(value: str | None) -> list[str]:
     if not value or not value.strip():
         raise RuntimeError("NOSPOIL_FRONTEND_ORIGINS is required")
@@ -33,29 +76,9 @@ def parse_origins(value: str | None) -> list[str]:
         raise RuntimeError("NOSPOIL_FRONTEND_ORIGINS contains an empty origin")
     for origin in origins:
         try:
-            parsed = urlparse(origin)
-            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            if _canonical_origin(origin) != origin:
                 raise ValueError
-            _ = parsed.port
-            if (
-                parsed.path
-                or parsed.params
-                or parsed.query
-                or parsed.fragment
-                or "?" in origin
-                or "#" in origin
-            ):
-                raise ValueError
-            if (
-                parsed.username is not None
-                or parsed.password is not None
-                or "@" in parsed.netloc
-                or "*" in parsed.netloc
-                or parsed.netloc.endswith(":")
-                or any(character.isspace() for character in origin)
-            ):
-                raise ValueError
-        except ValueError as error:
+        except (UnicodeError, ValueError) as error:
             raise RuntimeError(
                 "NOSPOIL_FRONTEND_ORIGINS contains an invalid origin"
             ) from error
@@ -112,9 +135,12 @@ def _success_headers(etag: str) -> dict[str, str]:
 
 
 def _parse_path_int(value: str) -> int:
-    if not re.fullmatch(r"[1-9][0-9]*", value):
+    if len(value) > 10 or not re.fullmatch(r"[1-9][0-9]*", value):
         raise DomainValidationError("invalid request")
-    return int(value)
+    parsed = int(value)
+    if parsed > 2_147_483_647:
+        raise DomainValidationError("invalid request")
+    return parsed
 
 
 def create_app(

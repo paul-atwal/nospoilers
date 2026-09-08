@@ -73,6 +73,8 @@ def test_validation_unknown_without_repository_read_and_post():
         "/api/v1/weeks/2026/regular_season/01",
         "/api/v1/weeks/2026/regular_season/1.0",
         "/api/v1/seasons/%20",
+        "/api/v1/seasons/2147483648",
+        "/api/v1/seasons/" + "9" * 4_301,
     ],
 )
 def test_numeric_paths_require_positive_decimal_syntax(path):
@@ -161,12 +163,26 @@ def test_unexpected_failure_is_safe_cacheless_and_cors_visible():
         "https://u:p@app.example",
         "https://*.example",
         "https:// app.example",
+        "https://app.example\\evil",
+        "https://%65xample.com",
+        "https://☃.example",
+        "HTTPS://APP.EXAMPLE",
+        "https://app.example:443",
         "https://app.example:",
         "https://app.example:bad",
     ],
 )
 def test_origin_parser_rejects_invalid(value):
     with pytest.raises(RuntimeError): parse_origins(value)
+
+
+def test_origin_parser_accepts_exact_canonical_origins():
+    value = (
+        "https://app.example,http://localhost:5173,"
+        "http://127.0.0.1:8000,http://[::1]:8000"
+    )
+
+    assert parse_origins(value) == value.split(",")
 
 
 def test_cold_read_runtime_import_excludes_write_modules():

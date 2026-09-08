@@ -2,9 +2,10 @@
 
 The read-only API exposes exactly `GET`/`HEAD` for `/api/v1/bootstrap`,
 `/api/v1/weeks/{season}/{phase}/{week}`, and `/api/v1/seasons/{season}`.
-`OPTIONS` is available only as CORS preflight. Seasons/weeks are integers and
-phase is exactly `preseason`, `regular_season`, or `postseason` (`422` when
-malformed); unknown configured calendar values are `404` before any read.
+`OPTIONS` is available only as CORS preflight. Seasons/weeks use positive
+decimal 32-bit integer syntax and phase is exactly `preseason`,
+`regular_season`, or `postseason` (`422` when malformed); unknown configured
+calendar values are `404` before any read.
 
 Bootstrap returns `activeSeason`, `currentWeek`, all source-known `knownWeeks`
 in calendar order, `calendarVersion`, and `pollAfterSeconds`. Week responses
@@ -65,8 +66,9 @@ are `503` with `{"detail":"snapshot temporarily unavailable"}`,
 `Retry-After: 30`, and `Cache-Control: no-store`; all >=400 responses are
 `no-store` and failures are never represented as empty success.
 
-`NOSPOIL_FRONTEND_ORIGINS` is required: comma-separated exact absolute
-`http`/`https` origins without wildcard, path, query, fragment, or credentials.
+`NOSPOIL_FRONTEND_ORIGINS` is required: comma-separated exact, canonical
+browser-serialized `http`/`https` origins without wildcard, path, query,
+fragment, credentials, Unicode hostnames, or explicit default ports.
 Only GET/HEAD/OPTIONS are permitted; `If-None-Match` is allowed and ETag,
 Cache-Control, and Retry-After are exposed. Credentials are false. CORS is
 browser policy, not authentication.
