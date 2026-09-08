@@ -363,6 +363,27 @@ def test_etag_changes_at_policy_threshold_and_for_stored_data() -> None:
     assert changed.etag != before.etag
 
 
+@pytest.mark.parametrize("snapshot_kind", ["week", "season"])
+def test_calendar_version_changes_snapshot_etag_without_changing_body(
+    snapshot_kind: str,
+) -> None:
+    repository = FakeRepository([game("one")])
+    first_service = ReadSnapshotService(
+        repository, SeasonCalendar(version="calendar-a"), lambda: NOW
+    )
+    second_service = ReadSnapshotService(
+        repository, SeasonCalendar(version="calendar-b"), lambda: NOW
+    )
+    if snapshot_kind == "week":
+        first = first_service.week_snapshot(2026, "regular_season", 1)
+        second = second_service.week_snapshot(2026, "regular_season", 1)
+    else:
+        first = first_service.season_snapshot(2026)
+        second = second_service.season_snapshot(2026)
+    assert dict(first) == dict(second)
+    assert first.etag != second.etag
+
+
 def test_repository_failure_is_not_converted_to_empty() -> None:
     class Failing(FakeRepository):
         def list_week(self, season_week: SeasonWeek) -> list[Game]:

@@ -307,6 +307,7 @@ class ReadSnapshotService:
         current_week = self.calendar.current_week(now)
         validator_material = {
             "body": body,
+            "calendarVersion": self.calendar.calendar_version,
             "selectedCalendarWeek": _week_payload(current_week),
             "pollClasses": [_poll_class(game, now) for game in games],
         }
