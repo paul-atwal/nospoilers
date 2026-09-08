@@ -3,6 +3,6 @@
 class GameRepositoryError(RuntimeError):
     """Durable game storage failed."""
 
+
 class GameRepositoryDataError(GameRepositoryError):
     """Stored data could not be decoded."""
-
