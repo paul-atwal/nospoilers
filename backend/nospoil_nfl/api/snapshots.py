@@ -16,7 +16,7 @@ from ..game.models import (
     SeasonWeek,
     TeamGameSnapshot,
 )
-from ..game.repository import GameRepository
+from ..game.read_repository import GameReadRepository
 from ..rating.confirmation import confirmation_work_remains, is_confirmation_supported
 from .calendar import SeasonCalendar
 
@@ -216,7 +216,7 @@ class ReadSnapshotService:
 
     def __init__(
         self,
-        repository: GameRepository,
+        repository: GameReadRepository,
         calendar: SeasonCalendar,
         clock: Clock | object,
     ) -> None:

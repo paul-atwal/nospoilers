@@ -1,10 +1,14 @@
+import subprocess
+import sys
+from textwrap import dedent
+
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.nospoil_nfl.api.http import create_app, parse_origins
 from backend.nospoil_nfl.api.calendar import SeasonCalendar
 from backend.nospoil_nfl.api.snapshots import SnapshotResult
-from backend.nospoil_nfl.game.repository import GameRepositoryError
+from backend.nospoil_nfl.game.read_repository import GameRepositoryError
 
 
 class FakeService:
@@ -59,6 +63,38 @@ def test_validation_unknown_without_repository_read_and_post():
     assert c.post('/api/v1/bootstrap').status_code == 405
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/weeks/2026.0/regular_season/1",
+        "/api/v1/weeks/%2B2026/regular_season/1",
+        "/api/v1/weeks/2026/regular_season/0",
+        "/api/v1/weeks/2026/regular_season/-1",
+        "/api/v1/weeks/2026/regular_season/01",
+        "/api/v1/weeks/2026/regular_season/1.0",
+        "/api/v1/seasons/%20",
+    ],
+)
+def test_numeric_paths_require_positive_decimal_syntax(path):
+    service = FakeService()
+    response = client(service).get(path)
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "invalid request"}
+    assert response.headers["cache-control"] == "no-store"
+    assert service.reads == []
+
+
+def test_framework_path_validation_has_stable_error_shape():
+    response = client(FakeService()).get(
+        "/api/v1/weeks/2026/not-a-phase/1"
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "invalid request"}
+    assert response.headers["cache-control"] == "no-store"
+
+
 def test_repository_failure_is_safe_and_cacheless_with_cors():
     c = client(FakeService(error=GameRepositoryError("internal details")))
     r = c.get('/api/v1/bootstrap', headers={"Origin": "https://app.example"})
@@ -84,9 +120,83 @@ def test_cors_simple_preflight_and_disallowed_origin():
     assert "If-None-Match" in r.headers["access-control-allow-headers"]
 
 
-@pytest.mark.parametrize("value", ["", "*", "https://app.example/path", "https://app.example/?x=1", "https://u:p@app.example"])
+def test_rejected_cors_preflight_is_not_cacheable():
+    response = client(FakeService()).options(
+        "/api/v1/bootstrap",
+        headers={
+            "Origin": "https://evil.example",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.headers["cache-control"] == "no-store"
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_unexpected_failure_is_safe_cacheless_and_cors_visible():
+    response = client(FakeService(error=ValueError("internal details"))).get(
+        "/api/v1/bootstrap",
+        headers={"Origin": "https://app.example"},
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "internal server error"}
+    assert "internal details" not in response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["access-control-allow-origin"] == "https://app.example"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "*",
+        "ftp://app.example",
+        "https:///missing-host",
+        "https://app.example/path",
+        "https://app.example?",
+        "https://app.example/?x=1",
+        "https://app.example#fragment",
+        "https://u:p@app.example",
+        "https://*.example",
+        "https:// app.example",
+        "https://app.example:",
+        "https://app.example:bad",
+    ],
+)
 def test_origin_parser_rejects_invalid(value):
     with pytest.raises(RuntimeError): parse_origins(value)
+
+
+def test_cold_read_runtime_import_excludes_write_modules():
+    code = dedent(
+        """
+        import sys
+        import backend.nospoil_nfl.api.handler
+        import backend.nospoil_nfl.api.http
+        from backend.nospoil_nfl.game.read_repository import DynamoReadRepository
+
+        forbidden = {
+            'backend.nospoil_nfl.game.repository',
+            'backend.nospoil_nfl.game.rules',
+            'backend.nospoil_nfl.game.updates',
+            'backend.nospoil_nfl.rating.calculator',
+        }
+        loaded = sorted(forbidden.intersection(sys.modules))
+        assert not loaded, loaded
+        assert not hasattr(DynamoReadRepository, 'create_if_absent')
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_exported_lambda_handler_with_injected_mangum(monkeypatch):

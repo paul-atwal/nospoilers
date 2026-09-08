@@ -5,11 +5,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from backend.nospoil_nfl.api import (
-    ReadSnapshotService,
-    SeasonCalendar,
-    UnknownSeasonWeekError,
-)
+from backend.nospoil_nfl.api.snapshots import ReadSnapshotService
+from backend.nospoil_nfl.api.calendar import SeasonCalendar, UnknownSeasonWeekError
 from backend.nospoil_nfl.game import (
     Game,
     GameId,
@@ -28,7 +25,7 @@ from backend.nospoil_nfl.game import (
     TeamGameSnapshot,
     TeamRecord,
 )
-from backend.nospoil_nfl.game.repository import GameRepositoryError
+from backend.nospoil_nfl.game.read_repository import GameRepositoryError
 
 
 NOW = datetime(2026, 9, 10, 18, 0, tzinfo=UTC)

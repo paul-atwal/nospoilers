@@ -12,7 +12,8 @@ import boto3
 from botocore.exceptions import EndpointConnectionError
 import pytest
 
-from backend.nospoil_nfl.api import ReadSnapshotService, SeasonCalendar
+from backend.nospoil_nfl.api.snapshots import ReadSnapshotService
+from backend.nospoil_nfl.api.calendar import SeasonCalendar
 from backend.nospoil_nfl.game import (
     DomainValidationError,
     Game,
@@ -39,6 +40,7 @@ from backend.nospoil_nfl.game import (
     WriteResult,
 )
 from backend.nospoil_nfl.game.dynamodb_repository import DynamoGameRepository
+from backend.nospoil_nfl.game.read_repository import DynamoReadRepository
 from backend.nospoil_nfl.game.repository import (
     GameRepositoryDataError,
     GameRepositoryError,
@@ -392,7 +394,7 @@ def test_list_week_uses_kickoff_order_and_excludes_other_weeks(game_table: objec
 
 def test_read_snapshot_consumes_all_paginated_week_results(game_table: object) -> None:
     """The read projection receives complete GSI pagination, not one page."""
-    repository = DynamoGameRepository(game_table, query_page_size=2)
+    writer = DynamoGameRepository(game_table)
     expected = [
         make_game("401000001", kickoff_at=datetime(2026, 9, 10, 17, 0, tzinfo=UTC)),
         make_game("401000002", kickoff_at=datetime(2026, 9, 10, 18, 0, tzinfo=UTC)),
@@ -400,7 +402,9 @@ def test_read_snapshot_consumes_all_paginated_week_results(game_table: object) -
         make_game("401000004", kickoff_at=None),
     ]
     for stored in reversed(expected):
-        assert repository.create_if_absent(stored) is True
+        assert writer.create_if_absent(stored) is True
+
+    repository = DynamoReadRepository(game_table, query_page_size=2)
 
     response = ReadSnapshotService(
         repository,

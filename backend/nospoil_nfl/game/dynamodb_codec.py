@@ -26,7 +26,7 @@ from .models import (
     TeamGameSnapshot,
     TeamRecord,
 )
-from .repository import GameRepositoryDataError
+from .errors import GameRepositoryDataError
 
 
 _SCHEMA_VERSION = 1
