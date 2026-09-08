@@ -13,6 +13,7 @@ from .models import (
     RatingRetry,
     SeasonWeek,
 )
+from .errors import GameRepositoryError, GameRepositoryDataError
 from .rules import can_transition_rating_state
 from .updates import (
     LiveFinalizationUpdate,
@@ -20,14 +21,6 @@ from .updates import (
     ScheduleUpdate,
     WriteResult,
 )
-
-
-class GameRepositoryError(RuntimeError):
-    """Raised when durable game storage cannot complete an operation."""
-
-
-class GameRepositoryDataError(GameRepositoryError):
-    """Raised when a stored item cannot become a valid game."""
 
 
 class NflverseIdConflictError(GameRepositoryError):

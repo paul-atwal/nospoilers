@@ -61,11 +61,21 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: |
+            backend/constraints.in
+            backend/constraints.txt
+            backend/requirements.in
+            backend/requirements-dev.in
+            backend/requirements-read.in
+            backend/requirements-sync.in
+            backend/requirements-reconcile.in
             backend/requirements.txt
             backend/requirements-dev.txt
+            backend/requirements-read.txt
+            backend/requirements-sync.txt
+            backend/requirements-reconcile.txt
 
       - name: Install backend dependencies
-        run: python -m pip install -r backend/requirements-dev.txt
+        run: python -m pip install -r backend/requirements-reconcile.txt
 
       - name: Validate reconciliation configuration
         shell: bash

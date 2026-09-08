@@ -1,0 +1,3 @@
+# Scheduled nflverse reconciliation install (Python 3.11 Linux).
+-c constraints.txt
+-r requirements-reconcile.in

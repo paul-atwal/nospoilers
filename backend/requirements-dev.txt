@@ -1,2 +1,3 @@
--r requirements.txt
-pytest
+# Development and CI install. Pins are shared in constraints.txt.
+-c constraints.txt
+-r requirements-dev.in

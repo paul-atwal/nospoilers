@@ -1,5 +1,28 @@
 # NoSpoil NFL backend
 
+## Provider-free read API foundation
+
+The read API foundation in `nospoil_nfl/api/` owns the spoiler-free snapshot
+projection, polling advice, ETag material, and the checked-in 2026 season
+calendar plus a source-verified 2020–2026 readable catalogue. It is safe for
+the HTTP read process to import: it performs no
+provider requests, downloads, calculations, writes, scheduler startup, or
+Redis initialization. The later HTTP adapter exposes these operations at
+`GET /api/v1/bootstrap`, `GET /api/v1/weeks/{season}/{phase}/{week}`, and
+`GET /api/v1/seasons/{season}`.
+
+See [API.md](API.md) for the durable transport contract, response semantics,
+ETag/cache behavior, CORS, Lambda environment, and calendar rollover procedure.
+
+The active calendar is the 2026 schedule observed from ESPN's normalized
+scoreboard calendar. The readable catalogue preserves the existing 2020–2025
+backfill range and the active 2026 season. Each year was verified 2026-09-07 at
+`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={season}`.
+The active boundaries, ordered catalogue, and
+`espn-2020-2026-verified-2026-09-07` version are checked in at
+`nospoil_nfl/api/calendar.py`. Rollover appends the new season without removing
+historical identities.
+
 This FastAPI service calculates spoiler-free excitement scores for completed NFL games.
 
 ## Data flow
@@ -20,7 +43,111 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-The service runs at `http://localhost:8000`.
+Dependency installs are resolved from one Python 3.11/Linux lock graph. Use
+the bounded set that matches the process you are running:
+
+```bash
+# Legacy full backend / Render build (Node still uses npm ci at the repository root)
+python -m pip install -r backend/requirements.txt
+# Development and CI
+python -m pip install -r backend/requirements-dev.txt
+# Read Lambda
+python -m pip install -r backend/requirements-read.txt
+# ESPN sync Lambda
+python -m pip install -r backend/requirements-sync.txt
+# Scheduled nflverse reconciliation
+python -m pip install -r backend/requirements-reconcile.txt
+```
+
+To run the read API locally with DynamoDB Local, use the development dependency
+set from the repository root:
+
+```bash
+python -m pip install -r backend/requirements-dev.txt
+```
+
+In terminal 1, run the pinned DynamoDB Local image on port 8000:
+
+```bash
+docker run --rm --name nospoil-dynamodb \
+  --publish 127.0.0.1:8000:8000 \
+  amazon/dynamodb-local:2.6.1 \
+  -jar DynamoDBLocal.jar -inMemory -sharedDb
+```
+
+In terminal 2, configure the local endpoint and create the table/index once:
+
+```bash
+export NOSPOIL_GAMES_TABLE=nospoil-games
+export NOSPOIL_DYNAMODB_LOCAL_ENDPOINT=http://127.0.0.1:8000
+export AWS_DEFAULT_REGION=us-west-2
+export AWS_ACCESS_KEY_ID=local
+export AWS_SECRET_ACCESS_KEY=local
+export NOSPOIL_FRONTEND_ORIGINS=http://localhost:3000
+python - <<'PY'
+import boto3
+
+resource = boto3.resource(
+    "dynamodb",
+    endpoint_url="http://127.0.0.1:8000",
+    region_name="us-west-2",
+    aws_access_key_id="local",
+    aws_secret_access_key="local",
+)
+table = resource.create_table(
+    TableName="nospoil-games",
+    KeySchema=[{"AttributeName": "game_id", "KeyType": "HASH"}],
+    AttributeDefinitions=[
+        {"AttributeName": "game_id", "AttributeType": "S"},
+        {"AttributeName": "season_key", "AttributeType": "S"},
+        {"AttributeName": "schedule_key", "AttributeType": "S"},
+    ],
+    GlobalSecondaryIndexes=[{
+        "IndexName": "season-schedule-index",
+        "KeySchema": [
+            {"AttributeName": "season_key", "KeyType": "HASH"},
+            {"AttributeName": "schedule_key", "KeyType": "RANGE"},
+        ],
+        "Projection": {"ProjectionType": "ALL"},
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 5,
+            "WriteCapacityUnits": 5,
+        },
+    }],
+    ProvisionedThroughput={"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
+)
+table.wait_until_exists()
+PY
+python -m uvicorn backend.nospoil_nfl.api.local:app --host 127.0.0.1 --port 8001
+```
+
+In terminal 3, make a real GSI-backed historical read. A new local table is a
+known-empty `200` response with `games: []` and `pollAfterSeconds: null`:
+
+```bash
+curl --fail-with-body --include \
+  http://127.0.0.1:8001/api/v1/weeks/2020/preseason/1
+```
+
+The deployed read Lambda handler is `backend.nospoil_nfl.api.handler.lambda_handler`.
+
+To update the shared resolved graph deterministically, use Python 3.11 on
+Linux with the pinned pip-tools version and review the resulting diff:
+
+```bash
+python3.11 -m pip install 'pip-tools==7.5.2'
+cd backend
+python3.11 -m piptools compile --resolver=backtracking --strip-extras \
+  --output-file constraints.txt constraints.in
+```
+
+All install files apply `constraints.txt`; an incompatible dependency fails
+the install rather than silently resolving outside the shared graph. The
+constraints file intentionally has no hashes so Linux deployment resolution
+remains portable across supported architectures.
+
+The legacy service runs at `http://localhost:8000`; the read API recipe above
+uses `http://127.0.0.1:8001` so it can run alongside DynamoDB Local.
 
 You can also use the helper script:
 
