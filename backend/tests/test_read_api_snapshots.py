@@ -6,7 +6,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from backend.nospoil_nfl.api.snapshots import ReadSnapshotService
-from backend.nospoil_nfl.api.calendar import SeasonCalendar, UnknownSeasonWeekError
+from backend.nospoil_nfl.api.calendar import (
+    CalendarEntry,
+    CalendarError,
+    SeasonCalendar,
+    UnknownSeasonError,
+    UnknownSeasonWeekError,
+)
 from backend.nospoil_nfl.game import (
     Game,
     GameId,
@@ -108,6 +114,156 @@ def test_calendar_contains_exact_source_ordered_2026_weeks_and_end() -> None:
     assert len(calendar.entries) == len(expected) == len(starts) == 27
     assert [entry.starts_at for entry in calendar.entries] == starts
     assert calendar.season_end == datetime(2027, 2, 16, 8, tzinfo=UTC)
+
+def test_readable_catalogue_matches_source_shapes_and_bootstrap_navigation() -> None:
+    calendar = SeasonCalendar()
+
+    assert len(calendar.known_weeks) == 189
+    assert calendar.known_weeks[0] == SeasonWeek(2020, SeasonPhase.PRESEASON, 1)
+    assert calendar.known_weeks[-1] == SeasonWeek(2026, SeasonPhase.POSTSEASON, 5)
+    for season in range(2020, 2027):
+        expected_maximums = {
+            SeasonPhase.PRESEASON: 5 if season == 2020 else 4,
+            SeasonPhase.REGULAR_SEASON: 17 if season == 2020 else 18,
+            SeasonPhase.POSTSEASON: 5,
+        }
+        for phase, maximum in expected_maximums.items():
+            assert [
+                known.week
+                for known in calendar.known_weeks
+                if known.season == season and known.phase is phase
+            ] == list(range(1, maximum + 1))
+
+    bootstrap = calendar.bootstrap(NOW)
+    assert bootstrap["activeSeason"] == 2026
+    assert bootstrap["currentWeek"] == {
+        "season": 2026,
+        "phase": "regular_season",
+        "week": 1,
+    }
+    assert len(bootstrap["knownWeeks"]) == 189
+    assert bootstrap["knownWeeks"][0] == {
+        "season": 2020,
+        "phase": "preseason",
+        "week": 1,
+    }
+    assert bootstrap["knownWeeks"][-1] == {
+        "season": 2026,
+        "phase": "postseason",
+        "week": 5,
+    }
+
+
+def test_known_empty_history_reads_once_but_unsupported_values_do_not_read() -> None:
+    repository = FakeRepository([])
+    snapshot_service = service(repository)
+
+    week = snapshot_service.week_snapshot(2025, SeasonPhase.POSTSEASON, 5)
+    season = snapshot_service.season_snapshot(2025)
+
+    assert week["games"] == []
+    assert week["snapshotAsOf"] is None
+    assert week["pollAfterSeconds"] is None
+    assert season["games"] == []
+    assert season["snapshotAsOf"] is None
+    assert season["pollAfterSeconds"] is None
+    assert repository.week_calls == 1
+    assert repository.season_calls == 1
+
+    with pytest.raises(UnknownSeasonError):
+        snapshot_service.season_snapshot(2019)
+    with pytest.raises(UnknownSeasonWeekError):
+        snapshot_service.week_snapshot(2020, SeasonPhase.REGULAR_SEASON, 18)
+    assert repository.week_calls == 1
+    assert repository.season_calls == 1
+
+
+@pytest.mark.parametrize(
+    "historical_game",
+    [
+        game(
+            "scheduled-history",
+            season_week=SeasonWeek(2025, SeasonPhase.REGULAR_SEASON, 1),
+            status=GameStatus(GameState.SCHEDULED),
+        ),
+        game(
+            "live-history",
+            season_week=SeasonWeek(2025, SeasonPhase.REGULAR_SEASON, 1),
+            status=GameStatus(GameState.IN_PROGRESS, period=2, score=Score(7, 3)),
+        ),
+        game(
+            "pending-history",
+            season_week=SeasonWeek(2025, SeasonPhase.REGULAR_SEASON, 1),
+            status=GameStatus(GameState.FINAL, score=Score(7, 3)),
+        ),
+    ],
+    ids=lambda historical_game: str(historical_game.game_id),
+)
+def test_historical_games_never_request_polling(historical_game: Game) -> None:
+    repository = FakeRepository([historical_game])
+    snapshot_service = service(repository)
+
+    week = snapshot_service.week_snapshot(historical_game.season_week)
+    season = snapshot_service.season_snapshot(historical_game.season_week.season)
+
+    assert week["pollAfterSeconds"] is None
+    assert season["pollAfterSeconds"] is None
+
+
+def test_catalogue_rollover_retains_old_weeks_and_adds_active_entries() -> None:
+    old = SeasonCalendar().known_weeks
+    entries = tuple(
+        CalendarEntry(
+            SeasonWeek(2027, SeasonPhase.REGULAR_SEASON, week),
+            datetime(2027, 9, week, tzinfo=UTC),
+        )
+        for week in range(1, 3)
+    )
+    new_weeks = tuple(entry.season_week for entry in entries)
+    rolled = SeasonCalendar(
+        entries,
+        active_season=2027,
+        season_end=datetime(2027, 10, 1, tzinfo=UTC),
+        catalogue=old + new_weeks,
+    )
+
+    assert rolled.known_weeks == old + new_weeks
+    assert rolled.validate_week(2020, SeasonPhase.PRESEASON, 1) == old[0]
+    assert rolled.current_week(datetime(2027, 9, 2, tzinfo=UTC)) == new_weeks[1]
+    assert rolled.bootstrap(datetime(2027, 9, 2, tzinfo=UTC))["knownWeeks"][
+        -1
+    ] == {"season": 2027, "phase": "regular_season", "week": 2}
+
+
+def test_catalogue_active_season_must_exactly_match_timed_entries() -> None:
+    entries = (
+        CalendarEntry(
+            SeasonWeek(2027, SeasonPhase.REGULAR_SEASON, 1),
+            datetime(2027, 9, 1, tzinfo=UTC),
+        ),
+        CalendarEntry(
+            SeasonWeek(2027, SeasonPhase.REGULAR_SEASON, 2),
+            datetime(2027, 9, 2, tzinfo=UTC),
+        ),
+    )
+    old = SeasonCalendar().known_weeks
+
+    with pytest.raises(CalendarError, match="exactly match"):
+        SeasonCalendar(
+            entries,
+            active_season=2027,
+            season_end=datetime(2027, 10, 1, tzinfo=UTC),
+            catalogue=old + (entries[0].season_week,),
+        )
+    with pytest.raises(CalendarError, match="exactly match"):
+        SeasonCalendar(
+            entries,
+            active_season=2027,
+            season_end=datetime(2027, 10, 1, tzinfo=UTC),
+            catalogue=old
+            + tuple(entry.season_week for entry in entries)
+            + (SeasonWeek(2027, SeasonPhase.REGULAR_SEASON, 3),),
+        )
 
 
 def test_week_is_one_read_and_unknown_week_fails_before_read() -> None:

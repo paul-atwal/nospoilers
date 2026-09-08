@@ -2,13 +2,19 @@
 
 The read-only API exposes exactly `GET`/`HEAD` for `/api/v1/bootstrap`,
 `/api/v1/weeks/{season}/{phase}/{week}`, and `/api/v1/seasons/{season}`.
-`OPTIONS` is available only as CORS preflight. Seasons/weeks use positive
+`OPTIONS` is available only as CORS preflight. The readable catalogue is
+source-verified for 2020–2026: 2020 has preseason 1–5, regular 1–17,
+postseason 1–5; 2021–2026 have preseason 1–4, regular 1–18, postseason 1–5
+(189 ordered week identities). Seasons/weeks use positive
 decimal 32-bit integer syntax and phase is exactly `preseason`,
 `regular_season`, or `postseason` (`422` when malformed); unknown configured
 calendar values are `404` before any read.
 
 Bootstrap returns `activeSeason`, `currentWeek`, all source-known `knownWeeks`
-in calendar order, `calendarVersion`, and `pollAfterSeconds`. Week responses
+in ascending season/phase/week order, `calendarVersion`, and
+`pollAfterSeconds`. Active/current-week selection uses only the source-timed
+2026 boundaries; the readable catalogue is a separate navigation and
+validation concern. Week responses
 contain `season`, `week`, `snapshotAsOf`, `pollAfterSeconds`, and `games`;
 season responses omit `week`. A known empty week is a valid `200` with
 `games: []` and `snapshotAsOf: null`. Nullable kickoff, scores, status details,
@@ -18,7 +24,10 @@ then game ID. Season order is rated first by score descending, then kickoff and
 game ID; unrated games follow by kickoff and ID. One application/repository
 operation consumes all results; a DynamoDB GSI query may internally use several
 paginated AWS requests. Results are eventually consistent, not an atomic
-multi-game view.
+multi-game view. Historical reads always return `pollAfterSeconds: null`;
+known-empty historical weeks query once and return `200` with empty games,
+while unsupported identities return `404` before any repository call. Rollover
+appends a new active season without removing prior catalogue entries.
 
 Each browser route is one client request and one application/repository
 operation; the client does not make per-game requests.
@@ -32,7 +41,7 @@ nullable, including pregame versus postgame records):
 
 Season responses use the same envelope and game shape but omit `week` and
 include all season games in Best-of-Season order. Bootstrap resembles
-`{"activeSeason":2026,"currentWeek":{"season":2026,"phase":"regular_season","week":1},"knownWeeks":[...],"calendarVersion":"espn-2026-09-07","pollAfterSeconds":300}`.
+`{"activeSeason":2026,"currentWeek":{"season":2026,"phase":"regular_season","week":1},"knownWeeks":[{"season":2020,"phase":"preseason","week":1},...],"calendarVersion":"espn-2020-2026-verified-2026-09-07","pollAfterSeconds":300}`.
 
 | Condition | Seconds |
 |---|---:|
@@ -83,7 +92,11 @@ Function URL v2 events with lifespan off.
 ## Calendar rollover
 
 Before preseason, fetch the ESPN scoreboard calendar using the existing
-adapter, replace the checked-in calendar in a reviewed release, run focused
-calendar/API tests, perform the manual preseason import, and then activate the
-new season. Until then the final configured week remains selected with slow
-polling; clients navigate only `knownWeeks`.
+adapter, add the new source-timed active entries, and append its week identities
+to the checked-in readable catalogue in a reviewed release. Never replace or
+remove the already supported historical catalogue during rollover. Run focused
+calendar/API retention tests, perform the manual preseason import, and then
+activate the new season. Until then the final configured week remains selected
+with slow polling; clients navigate only `knownWeeks`. The catalogue establishes
+which identities may be read; populating historical data remains a separate
+import operation.

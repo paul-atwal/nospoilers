@@ -15,11 +15,18 @@ from typing import Iterable
 from ..game.models import DomainValidationError, SeasonPhase, SeasonWeek
 
 
-CALENDAR_VERSION = "espn-2026-09-07"
+CALENDAR_VERSION = "espn-2020-2026-verified-2026-09-07"
 CALENDAR_SOURCE_URL = (
     "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+    "?dates={season}"
 )
 CALENDAR_VERIFIED_AT = "2026-09-07T00:00:00Z"
+
+_PHASE_ORDER = {
+    SeasonPhase.PRESEASON: 0,
+    SeasonPhase.REGULAR_SEASON: 1,
+    SeasonPhase.POSTSEASON: 2,
+}
 
 
 class CalendarError(ValueError):
@@ -118,6 +125,23 @@ def _default_entries() -> tuple[CalendarEntry, ...]:
     return tuple(entries)
 
 
+def _default_catalogue() -> tuple[SeasonWeek, ...]:
+    weeks: list[SeasonWeek] = []
+    for season in range(2020, 2027):
+        preseason_max = 5 if season == 2020 else 4
+        regular_max = 17 if season == 2020 else 18
+        for phase, maximum in (
+            (SeasonPhase.PRESEASON, preseason_max),
+            (SeasonPhase.REGULAR_SEASON, regular_max),
+            (SeasonPhase.POSTSEASON, 5),
+        ):
+            weeks.extend(
+                SeasonWeek(season, phase, week)
+                for week in range(1, maximum + 1)
+            )
+    return tuple(weeks)
+
+
 class SeasonCalendar:
     """Authoritative known-week list and current-week selection policy."""
 
@@ -130,6 +154,7 @@ class SeasonCalendar:
         version: str = CALENDAR_VERSION,
         source_url: str = CALENDAR_SOURCE_URL,
         verified_at: str = CALENDAR_VERIFIED_AT,
+        catalogue: Iterable[SeasonWeek] | None = None,
     ) -> None:
         self._entries = tuple(_default_entries() if entries is None else entries)
         if not self._entries:
@@ -157,11 +182,43 @@ class SeasonCalendar:
         if self.season_end < self._entries[-1].starts_at:
             raise CalendarError("season_end cannot precede final week")
         self._starts = tuple(starts)
-        self._by_week = {entry.season_week: entry for entry in self._entries}
+        self._catalogue = tuple(
+            _default_catalogue() if catalogue is None else catalogue
+        )
+        if not self._catalogue or any(
+            not isinstance(week, SeasonWeek) for week in self._catalogue
+        ):
+            raise CalendarError("catalogue must contain SeasonWeek values")
+        if len(set(self._catalogue)) != len(self._catalogue):
+            raise CalendarError("catalogue must contain unique known weeks")
+        canonical = tuple(
+            sorted(
+                self._catalogue,
+                key=lambda week: (week.season, _PHASE_ORDER[week.phase], week.week),
+            )
+        )
+        if canonical != self._catalogue:
+            raise CalendarError("catalogue must be in canonical season/phase/week order")
+        active_weeks = frozenset(entry.season_week for entry in self._entries)
+        catalogued_active_weeks = frozenset(
+            week for week in self._catalogue if week.season == self.active_season
+        )
+        if catalogued_active_weeks != active_weeks:
+            raise CalendarError(
+                "catalogue active season must exactly match active calendar entries"
+            )
+        self._catalogue_set = frozenset(self._catalogue)
+        self._readable_seasons = frozenset(
+            week.season for week in self._catalogue
+        )
+        self._active_by_week = {entry.season_week: entry for entry in self._entries}
+        self._active_index = {
+            entry.season_week: index for index, entry in enumerate(self._entries)
+        }
 
     @property
     def known_weeks(self) -> tuple[SeasonWeek, ...]:
-        return tuple(entry.season_week for entry in self._entries)
+        return self._catalogue
 
     @property
     def entries(self) -> tuple[CalendarEntry, ...]:
@@ -170,7 +227,7 @@ class SeasonCalendar:
     def validate_season(self, season: int) -> int:
         if isinstance(season, bool) or not isinstance(season, int):
             raise DomainValidationError("season must be an integer")
-        if season != self.active_season:
+        if season not in self._readable_seasons:
             raise UnknownSeasonError(f"unknown season: {season}")
         return season
 
@@ -192,7 +249,7 @@ class SeasonCalendar:
         if isinstance(week, bool) or not isinstance(week, int):
             raise DomainValidationError("week must be an integer")
         season_week = SeasonWeek(season, season_phase, week)
-        if season_week not in self._by_week:
+        if season_week not in self._catalogue_set:
             raise UnknownSeasonWeekError(
                 f"unknown season week: {season}-{season_phase.value}-{week}"
             )
@@ -200,7 +257,7 @@ class SeasonCalendar:
 
     def entry(self, season_week: SeasonWeek) -> CalendarEntry:
         try:
-            return self._by_week[season_week]
+            return self._active_by_week[season_week]
         except KeyError as error:
             raise UnknownSeasonWeekError(
                 f"unknown season week: {season_week.season}-{season_week.phase.value}-{season_week.week}"
@@ -217,10 +274,12 @@ class SeasonCalendar:
         return self._entries[index].season_week
 
     def is_current_or_future(self, season_week: SeasonWeek, now: datetime) -> bool:
+        if season_week not in self._catalogue_set:
+            raise UnknownSeasonWeekError("unknown season week")
+        if season_week.season != self.active_season:
+            return False
         current = self.current_week(now)
-        return self._entries.index(self.entry(season_week)) >= self._entries.index(
-            self.entry(current)
-        )
+        return self._active_index[season_week] >= self._active_index[current]
 
     def bootstrap(self, now: datetime) -> dict[str, object]:
         current = self.current_week(now)

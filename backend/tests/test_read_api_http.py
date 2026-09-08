@@ -1,5 +1,6 @@
 import subprocess
 import sys
+from datetime import UTC, datetime
 from textwrap import dedent
 
 import pytest
@@ -7,8 +8,10 @@ from fastapi.testclient import TestClient
 
 from backend.nospoil_nfl.api.http import create_app, parse_origins
 from backend.nospoil_nfl.api.calendar import SeasonCalendar
-from backend.nospoil_nfl.api.snapshots import SnapshotResult
+from backend.nospoil_nfl.api.snapshots import ReadSnapshotService, SnapshotResult
+from backend.nospoil_nfl.game.models import SeasonPhase, SeasonWeek
 from backend.nospoil_nfl.game.read_repository import GameRepositoryError
+from backend.tests.test_read_api_snapshots import game
 
 
 class FakeService:
@@ -61,6 +64,91 @@ def test_validation_unknown_without_repository_read_and_post():
     assert c.get('/api/v1/weeks/2026/regular_season/99').status_code == 404
     assert service.reads == []
     assert c.post('/api/v1/bootstrap').status_code == 405
+
+def test_real_http_service_reads_saved_previous_season_week_and_season():
+    saved = game(
+        "historic",
+        season_week=SeasonWeek(2025, SeasonPhase.POSTSEASON, 5),
+    )
+
+    class Reader:
+        def __init__(self):
+            self.calls = []
+
+        def list_week(self, season_week):
+            self.calls.append(("week", season_week))
+            return [saved]
+
+        def list_season(self, season):
+            self.calls.append(("season", season))
+            return [saved]
+
+    repository = Reader()
+    snapshot_service = ReadSnapshotService(
+        repository,
+        SeasonCalendar(),
+        lambda: datetime(2026, 9, 7, tzinfo=UTC),
+    )
+    http = client(snapshot_service)
+
+    week = http.get("/api/v1/weeks/2025/postseason/5")
+    season = http.get("/api/v1/seasons/2025")
+
+    assert week.status_code == 200
+    assert week.json()["games"][0]["id"] == str(saved.game_id)
+    assert week.json()["pollAfterSeconds"] is None
+    assert season.status_code == 200
+    assert season.json()["games"][0]["id"] == str(saved.game_id)
+    assert season.json()["pollAfterSeconds"] is None
+    assert repository.calls == [
+        ("week", saved.season_week),
+        ("season", 2025),
+    ]
+
+
+def test_real_http_distinguishes_known_empty_from_unsupported_history():
+    class EmptyReader:
+        def __init__(self):
+            self.calls = []
+
+        def list_week(self, season_week):
+            self.calls.append(("week", season_week))
+            return []
+
+        def list_season(self, season):
+            self.calls.append(("season", season))
+            return []
+
+    repository = EmptyReader()
+    snapshot_service = ReadSnapshotService(
+        repository,
+        SeasonCalendar(),
+        lambda: datetime(2026, 9, 7, tzinfo=UTC),
+    )
+    http = client(snapshot_service)
+
+    bootstrap = http.get("/api/v1/bootstrap")
+    known_week = http.get("/api/v1/weeks/2020/preseason/5")
+    known_season = http.get("/api/v1/seasons/2020")
+    unsupported_week = http.get("/api/v1/weeks/2020/regular_season/18")
+    unsupported_season = http.get("/api/v1/seasons/2019")
+
+    assert bootstrap.status_code == 200
+    assert len(bootstrap.json()["knownWeeks"]) == 189
+    assert known_week.status_code == 200
+    assert known_week.json()["games"] == []
+    assert known_week.json()["snapshotAsOf"] is None
+    assert known_week.json()["pollAfterSeconds"] is None
+    assert known_season.status_code == 200
+    assert known_season.json()["games"] == []
+    assert unsupported_week.status_code == 404
+    assert unsupported_week.json() == {"detail": "unknown season week"}
+    assert unsupported_season.status_code == 404
+    assert unsupported_season.json() == {"detail": "unknown season"}
+    assert repository.calls == [
+        ("week", SeasonWeek(2020, SeasonPhase.PRESEASON, 5)),
+        ("season", 2020),
+    ]
 
 
 @pytest.mark.parametrize(
