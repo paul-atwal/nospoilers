@@ -49,6 +49,8 @@ const Header: React.FC<HeaderProps> = ({
               <button
                   type="button"
                   onClick={() => onViewModeChange(viewMode === 'season' ? 'weekly' : 'season')}
+                  aria-label={viewMode === 'season' ? 'Return to weekly games' : 'Show Best of Season'}
+                  aria-pressed={viewMode === 'season'}
                   className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-bold transition-colors border ${
                       viewMode === 'season' 
                       ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50' 

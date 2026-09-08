@@ -44,22 +44,24 @@ Requirements:
 Install packages and start the backend:
 
 ```bash
-cd backend
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8001
+python -m pip install -r backend/requirements-dev.txt
+export NOSPOIL_GAMES_TABLE=nospoil-games
+export NOSPOIL_DYNAMODB_LOCAL_ENDPOINT=http://127.0.0.1:8000
+export NOSPOIL_FRONTEND_ORIGINS=http://localhost:3000
+python -m uvicorn backend.nospoil_nfl.api.local:app --host 127.0.0.1 --port 8001
 ```
 
-The read API runs at `http://127.0.0.1:8001` and serves `/api/v1/bootstrap`, `/api/v1/weeks/...`, and `/api/v1/seasons/...`.
+The read API runs at `http://127.0.0.1:8001` and serves `/api/v1/bootstrap`, `/api/v1/weeks/...`, and `/api/v1/seasons/...`. It requires the DynamoDB Local table and index to exist before startup.
 
-See [backend/API.md](backend/API.md) for the local DynamoDB/read-API recipe and response contract.
+See [backend/README.md](backend/README.md) for the complete DynamoDB Local setup and table-creation recipe. See [backend/API.md](backend/API.md) for the response contract.
 
 ## Environment variables
 
 | Name | Service | Purpose |
 | --- | --- | --- |
-| `VITE_API_URL` | Frontend | Optional API origin/path; `/api/v1` is normalized without duplication |
+| `VITE_API_URL` | Frontend | Optional API origin/base prefix; do not include `/api` or `/api/v1` |
 | `REDIS_URL` | Backend | Optional Redis connection for shared score storage |
 | `PORT` | Backend | Server port set by the hosting platform |
 
