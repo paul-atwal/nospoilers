@@ -79,6 +79,20 @@ describe('ReadApiClient endpoint and body ownership', () => {
     expect(fetcher.mock.calls[1][1]?.headers).toBeUndefined();
   });
 
+  it('hydrates only the exact cached week or season endpoint on re-entry', async () => {
+    const weekBody = { season: 2026, week, snapshotAsOf: null, pollAfterSeconds: null, games: [] };
+    const seasonBody = { season: 2026, snapshotAsOf: null, pollAfterSeconds: null, games: [] };
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(response(weekBody, 200, { ETag: '"week"' }))
+      .mockResolvedValueOnce(response(seasonBody, 200, { ETag: '"season"' }));
+    const client = new ReadApiClient({ baseUrl: 'http://api.test', fetcher });
+    await client.fetchWeekSnapshot(week);
+    await client.fetchSeasonSnapshot(2026);
+    expect(client.getCachedWeekSnapshot(week)?.body).toEqual(weekBody);
+    expect(client.getCachedSeasonSnapshot(2026)?.body).toEqual(seasonBody);
+    expect(client.getCachedWeekSnapshot({ ...week, week: 2 })).toBeNull();
+  });
+
   it('exposes bounded retry metadata for 429 and validates successful bodies', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(response({ detail: 'busy' }, 429, { 'Retry-After': '4' }));
     const client = new ReadApiClient({ baseUrl: 'http://api.test', fetcher });

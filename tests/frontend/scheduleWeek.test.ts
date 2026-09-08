@@ -9,6 +9,7 @@ import {
   getPreviousSeasonWeek,
   getRankingWeeksThrough,
   getWeekInfo,
+  selectWeekAfterBootstrapRefresh,
 } from '../../utils/scheduleWeek';
 
 
@@ -142,5 +143,12 @@ describe('season-week navigation', () => {
     expect(getNextSeasonWeek(catalogue[3], catalogue)).toEqual(catalogue[4]);
     expect(getPreviousSeasonWeek(catalogue[4], catalogue)).toEqual(catalogue[3]);
     expect(getNextSeasonWeek(catalogue[4], catalogue)).toEqual(catalogue[4]);
+  });
+
+  it('follows source current-week rollover only while selection is untouched', () => {
+    const oldSource = { season: 2026, phase: 'regular_season' as const, week: 18 };
+    const newSource = { season: 2026, phase: 'postseason' as const, week: 1 };
+    expect(selectWeekAfterBootstrapRefresh(oldSource, oldSource, newSource, false)).toEqual(newSource);
+    expect(selectWeekAfterBootstrapRefresh({ ...oldSource, week: 1 }, oldSource, newSource, true)).toEqual({ ...oldSource, week: 1 });
   });
 });

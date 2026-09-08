@@ -22,8 +22,8 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
   const colorClasses = getExcitementColor(score);
   const weekInfo = getWeekInfo(game.seasonWeek);
   
-  const isHomeWinner = isRevealed && game.homeScore > game.awayScore;
-  const isAwayWinner = isRevealed && game.awayScore > game.homeScore;
+  const isHomeWinner = isRevealed && game.homeScore !== null && game.awayScore !== null && game.homeScore > game.awayScore;
+  const isAwayWinner = isRevealed && game.homeScore !== null && game.awayScore !== null && game.awayScore > game.homeScore;
   
   // Parse odds nicely if they exist (e.g. "CHI -2.5" -> "CHI" top, "-2.5" bottom)
   const oddsParts = game.odds ? game.odds.split(' ') : null;
@@ -100,7 +100,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
                             </span>
                         </div>
                     </div>
-                    {isRevealed && (
+                    {isRevealed && game.awayScore !== null && (
                         <span className={`font-mono font-bold text-lg ${isAwayWinner ? 'text-white' : 'text-neutral-600'}`}>
                             {game.awayScore}
                         </span>
@@ -124,7 +124,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
                             </span>
                         </div>
                     </div>
-                     {isRevealed && (
+                     {isRevealed && game.homeScore !== null && (
                         <span className={`font-mono font-bold text-lg ${isHomeWinner ? 'text-white' : 'text-neutral-600'}`}>
                             {game.homeScore}
                         </span>

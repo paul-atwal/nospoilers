@@ -8,6 +8,8 @@ interface HeaderProps {
   currentSeasonLabel: string;
   onPreviousWeek: () => void;
   onNextWeek: () => void;
+  previousDisabled?: boolean;
+  nextDisabled?: boolean;
   viewMode: 'weekly' | 'season';
   onViewModeChange: (mode: 'weekly' | 'season') => void;
 }
@@ -17,6 +19,8 @@ const Header: React.FC<HeaderProps> = ({
   currentSeasonLabel,
   onPreviousWeek,
   onNextWeek,
+  previousDisabled = false,
+  nextDisabled = false,
   viewMode,
   onViewModeChange,
 }) => {
@@ -62,8 +66,9 @@ const Header: React.FC<HeaderProps> = ({
              <div className="mt-3 flex items-center justify-between bg-neutral-800/50 rounded-lg border border-white/5 p-1">
                 <button 
                   onClick={onPreviousWeek}
-                  className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300"
-                  aria-label="Previous week"
+                  disabled={previousDisabled}
+                  className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                  aria-label={previousDisabled ? 'Previous week (first known week)' : 'Previous week'}
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -79,8 +84,9 @@ const Header: React.FC<HeaderProps> = ({
 
                 <button
                   onClick={onNextWeek}
-                  className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300"
-                  aria-label="Next week"
+                  disabled={nextDisabled}
+                  className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                  aria-label={nextDisabled ? 'Next week (last known week)' : 'Next week'}
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>

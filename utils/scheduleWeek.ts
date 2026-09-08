@@ -107,6 +107,19 @@ export const sameSeasonWeek = (left: SeasonWeek, right: SeasonWeek): boolean => 
     && left.week === right.week
 );
 
+export const selectWeekAfterBootstrapRefresh = (
+  previousSelection: SeasonWeek | null,
+  previousSourceCurrentWeek: SeasonWeek | null,
+  refreshedSourceCurrentWeek: SeasonWeek,
+  selectionWasDeliberate: boolean,
+): SeasonWeek => {
+  if (previousSelection === null) return refreshedSourceCurrentWeek;
+  if (!selectionWasDeliberate && previousSourceCurrentWeek !== null && sameSeasonWeek(previousSelection, previousSourceCurrentWeek)) {
+    return refreshedSourceCurrentWeek;
+  }
+  return previousSelection;
+};
+
 export const isFirstKnownWeek = (
   seasonWeek: SeasonWeek,
   knownWeeks: readonly SeasonWeek[],

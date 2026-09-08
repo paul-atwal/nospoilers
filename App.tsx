@@ -5,7 +5,7 @@ import type { ApiGame, ApiRecord, ApiTeam, BootstrapResponse, Game, GameRecordSn
 import { ReadApiClient, type ReadApiResponse } from './services/readApi';
 import { createRequestOwner, type RequestOwner } from './services/requestLifecycle';
 import { AlertCircle, Info, Loader2 } from 'lucide-react';
-import { getNextSeasonWeek, getPreviousSeasonWeek, getWeekInfo, isFirstKnownWeek, isLastKnownWeek } from './utils/scheduleWeek';
+import { getNextSeasonWeek, getPreviousSeasonWeek, getWeekInfo, isFirstKnownWeek, isLastKnownWeek, selectWeekAfterBootstrapRefresh } from './utils/scheduleWeek';
 
 const apiGameStateLabel: Record<ApiGame['status']['state'], string> = { scheduled: 'Scheduled', in_progress: 'In Progress', final: 'Final', delayed: 'Delayed', postponed: 'Postponed', cancelled: 'Cancelled' };
 const isValidDate = (value: string | null): value is string => value !== null && Number.isFinite(new Date(value).getTime());
@@ -35,12 +35,12 @@ export const toViewGame = (apiGame: ApiGame): Game => {
   const isLive = apiGame.status.state === 'in_progress' || apiGame.status.state === 'delayed';
   return {
     id: apiGame.id, homeTeam: apiGame.home.displayName, awayTeam: apiGame.away.displayName,
-    homeTeamLogo: undefined, awayTeamLogo: undefined, homeScore: score?.home ?? 0, awayScore: score?.away ?? 0,
+    homeTeamLogo: undefined, awayTeamLogo: undefined, homeScore: score?.home ?? null, awayScore: score?.away ?? null,
     homeRecord: toLegacySnapshots(apiGame.home), awayRecord: toLegacySnapshots(apiGame.away),
     status: apiGame.status.detail ?? apiGameStateLabel[apiGame.status.state], kickoffTime: kickoff.time,
     dayOfWeek: kickoff.day, dateLabel: kickoff.date, seasonWeek: apiGame.seasonWeek,
     excitementScore: ratingScore, isEstimated: apiGame.rating.state === 'provisional',
-    spoilerData: { homeScore: score?.home ?? 0, awayScore: score?.away ?? 0, summary: '' },
+    spoilerData: { homeScore: score?.home ?? null, awayScore: score?.away ?? null, summary: '' },
     broadcaster: apiGame.broadcaster ?? undefined, isUpcoming, isLive, odds: apiGame.odds?.details ?? undefined,
   };
 };
@@ -55,12 +55,13 @@ const App: React.FC = () => {
   const weeklyOwner = useRef<RequestOwner>(createRequestOwner());
   const seasonOwner = useRef<RequestOwner>(createRequestOwner());
   const selectedWasChanged = useRef(false);
+  const sourceCurrentWeekRef = useRef<SeasonWeek | null>(null);
   const [bootstrap, setBootstrap] = useState<BootstrapResponse | null>(null);
   const [selectedWeek, setSelectedWeek] = useState<SeasonWeek | null>(null);
   const [bootstrapLoading, setBootstrapLoading] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
-  const [weeklySnapshot, setWeeklySnapshot] = useState<WeekSnapshotResponse | null>(null);
-  const [seasonSnapshot, setSeasonSnapshot] = useState<SeasonSnapshotResponse | null>(null);
+  const [weeklySnapshots, setWeeklySnapshots] = useState<Record<string, WeekSnapshotResponse>>({});
+  const [seasonSnapshots, setSeasonSnapshots] = useState<Record<number, SeasonSnapshotResponse>>({});
   const [weeklyLoading, setWeeklyLoading] = useState(false);
   const [seasonLoading, setSeasonLoading] = useState(false);
   const [weeklyError, setWeeklyError] = useState<string | null>(null);
@@ -76,7 +77,13 @@ const App: React.FC = () => {
       onLoading: setBootstrapLoading,
       onData: (response: ReadApiResponse<BootstrapResponse>) => {
         setBootstrap(response.body);
-        setSelectedWeek((previous) => previous || selectedWasChanged.current ? previous : response.body.currentWeek);
+        setSelectedWeek((previous) => selectWeekAfterBootstrapRefresh(
+          previous,
+          sourceCurrentWeekRef.current,
+          response.body.currentWeek,
+          selectedWasChanged.current,
+        ));
+        sourceCurrentWeekRef.current = response.body.currentWeek;
         setBootstrapError(null);
       },
       onError: (error) => setBootstrapError(getErrorMessage(error, 'Failed to load the NFL week catalogue.')),
@@ -87,11 +94,14 @@ const App: React.FC = () => {
   useEffect(() => {
     const owner = weeklyOwner.current;
     if (!bootstrap || !selectedWeek || viewMode !== 'weekly') { owner.cancel(); return; }
-    setWeeklySnapshot(null); setWeeklyError(null);
+    const key = weekKey(selectedWeek);
+    const cached = apiRef.current!.getCachedWeekSnapshot(selectedWeek);
+    if (cached) setWeeklySnapshots((previous) => ({ ...previous, [key]: cached.body }));
+    setWeeklyError(null);
     void owner.start({
       load: (signal) => apiRef.current!.fetchWeekSnapshot(selectedWeek, signal), getPollAfterSeconds: (response) => response.pollAfterSeconds,
       onLoading: setWeeklyLoading,
-      onData: (response: ReadApiResponse<WeekSnapshotResponse>) => { setWeeklySnapshot(response.body); setWeeklyError(null); },
+      onData: (response: ReadApiResponse<WeekSnapshotResponse>) => { setWeeklySnapshots((previous) => ({ ...previous, [key]: response.body })); setWeeklyError(null); },
       onError: (error) => setWeeklyError(getErrorMessage(error, 'Failed to load this week.')),
     });
     return () => owner.cancel();
@@ -100,11 +110,14 @@ const App: React.FC = () => {
   useEffect(() => {
     const owner = seasonOwner.current;
     if (!bootstrap || viewMode !== 'season') { owner.cancel(); return; }
-    setSeasonSnapshot(null); setSeasonError(null);
+    const season = bootstrap.activeSeason;
+    const cached = apiRef.current!.getCachedSeasonSnapshot(season);
+    if (cached) setSeasonSnapshots((previous) => ({ ...previous, [season]: cached.body }));
+    setSeasonError(null);
     void owner.start({
-      load: (signal) => apiRef.current!.fetchSeasonSnapshot(bootstrap.activeSeason, signal), getPollAfterSeconds: (response) => response.pollAfterSeconds,
+      load: (signal) => apiRef.current!.fetchSeasonSnapshot(season, signal), getPollAfterSeconds: (response) => response.pollAfterSeconds,
       onLoading: setSeasonLoading,
-      onData: (response: ReadApiResponse<SeasonSnapshotResponse>) => { setSeasonSnapshot(response.body); setSeasonError(null); },
+      onData: (response: ReadApiResponse<SeasonSnapshotResponse>) => { setSeasonSnapshots((previous) => ({ ...previous, [season]: response.body })); setSeasonError(null); },
       onError: (error) => setSeasonError(getErrorMessage(error, 'Could not load season data.')),
     });
     return () => owner.cancel();
@@ -126,6 +139,9 @@ const App: React.FC = () => {
   const currentWeek = selectedWeek ? getWeekInfo(selectedWeek) : null;
   const sourceCurrentWeek = bootstrap ? getWeekInfo(bootstrap.currentWeek) : null;
   const knownWeeks = bootstrap?.knownWeeks ?? [];
+  const selectedWeekKey = weekKey(selectedWeek);
+  const weeklySnapshot = selectedWeekKey ? weeklySnapshots[selectedWeekKey] ?? null : null;
+  const seasonSnapshot = bootstrap ? seasonSnapshots[bootstrap.activeSeason] ?? null : null;
   const displayedGames = viewMode === 'season'
     ? (seasonSnapshot?.games ?? []).filter((game) => game.seasonWeek.phase !== 'preseason').filter((game) => (game.rating.state === 'confirmed' || game.rating.state === 'provisional') && game.rating.score !== null).slice(0, 10).map(toViewGame)
     : (weeklySnapshot?.games ?? []).map(toViewGame);
@@ -146,7 +162,7 @@ const App: React.FC = () => {
   if (!currentWeek || !bootstrap || !sourceCurrentWeek) return null;
 
   return <div className="min-h-screen flex flex-col bg-[#121212] text-white font-sans">
-    <Header currentWeek={currentWeek} currentSeasonLabel={sourceCurrentWeek.seasonLabel} onPreviousWeek={handlePreviousWeek} onNextWeek={handleNextWeek} viewMode={viewMode} onViewModeChange={setViewMode} />
+    <Header currentWeek={currentWeek} currentSeasonLabel={sourceCurrentWeek.seasonLabel} onPreviousWeek={handlePreviousWeek} onNextWeek={handleNextWeek} previousDisabled={isFirstKnownWeek(selectedWeek, knownWeeks)} nextDisabled={isLastKnownWeek(selectedWeek, knownWeeks)} viewMode={viewMode} onViewModeChange={setViewMode} />
     <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6 relative">
       <div className="flex justify-between items-end mb-4 px-1"><h2 className="text-lg font-bold text-white">{viewMode === 'weekly' ? 'Game Rankings' : 'Season Leaders'}</h2><button onClick={() => setShowRatingInfo(!showRatingInfo)} className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-neutral-500 hover:text-blue-400 transition-colors"><Info className="w-3 h-3" />Rating Info</button></div>
       {showRatingInfo && <div className="mb-6 bg-neutral-800/50 border border-white/10 rounded-xl p-4 text-sm text-neutral-300"><h3 className="font-bold text-white mb-2">How Games Are Rated</h3><p className="text-xs opacity-80">Ratings are calculated from the read API snapshot.</p></div>}

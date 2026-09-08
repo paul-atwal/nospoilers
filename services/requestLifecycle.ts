@@ -47,6 +47,7 @@ export class DefaultRequestOwner implements RequestOwner {
   private controller: AbortController | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private inFlight: Promise<void> | null = null;
+  private retryWaitResolve: (() => void) | null = null;
   private options: RequestOwnerOptions<unknown> | null = null;
   private retryAttempt = 0;
 
@@ -88,6 +89,9 @@ export class DefaultRequestOwner implements RequestOwner {
   private clearTimer(): void {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+    const resolve = this.retryWaitResolve;
+    this.retryWaitResolve = null;
+    resolve?.();
   }
 
   private run(generation: number): Promise<void> {
@@ -128,8 +132,10 @@ export class DefaultRequestOwner implements RequestOwner {
         const delay = retryDelay(error, attempt);
         options.onRetry?.(error, delay);
         await new Promise<void>((resolve) => {
+          this.retryWaitResolve = resolve;
           this.timer = setTimeout(() => {
             this.timer = null;
+            this.retryWaitResolve = null;
             resolve();
           }, delay);
         });

@@ -301,6 +301,14 @@ export class ReadApiClient {
     } : null;
   }
 
+  getCachedWeekSnapshot(week: SeasonWeek): ReadApiResponse<WeekSnapshotResponse> | null {
+    return this.getCacheEntry(`/api/v1/weeks/${week.season}/${week.phase}/${week.week}`) as ReadApiResponse<WeekSnapshotResponse> | null;
+  }
+
+  getCachedSeasonSnapshot(season: number): ReadApiResponse<SeasonSnapshotResponse> | null {
+    return this.getCacheEntry(`/api/v1/seasons/${season}`) as ReadApiResponse<SeasonSnapshotResponse> | null;
+  }
+
   fetchBootstrap(signal?: AbortSignal): Promise<ReadApiResponse<BootstrapResponse>> {
     return this.request('/api/v1/bootstrap', decodeBootstrap, signal);
   }

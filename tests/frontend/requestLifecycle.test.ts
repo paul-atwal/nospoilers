@@ -51,4 +51,15 @@ describe('DefaultRequestOwner', () => {
     await started;
     expect(load).toHaveBeenCalledTimes(2);
   });
+
+  it('settles a retry backoff promise when cancelled', async () => {
+    vi.useFakeTimers();
+    const owner = new DefaultRequestOwner();
+    const load = vi.fn().mockRejectedValue(new ReadApiError('offline', { retryable: true }));
+    const started = owner.start({ load, getPollAfterSeconds: () => null, onData: vi.fn(), onError: vi.fn() });
+    await Promise.resolve();
+    owner.cancel();
+    await expect(started).resolves.toBeUndefined();
+    expect(load).toHaveBeenCalledTimes(1);
+  });
 });

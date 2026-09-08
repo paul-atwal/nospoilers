@@ -1,7 +1,7 @@
 
 export interface GameSpoilerData {
-  homeScore: string | number;
-  awayScore: string | number;
+  homeScore: string | number | null;
+  awayScore: string | number | null;
   summary: string;
 }
 
@@ -135,8 +135,8 @@ export interface Game {
   awayTeam: string;
   homeTeamLogo?: string;
   awayTeamLogo?: string;
-  homeScore: number;
-  awayScore: number;
+  homeScore: number | null;
+  awayScore: number | null;
   homeRecord: GameRecordSnapshots | null;
   awayRecord: GameRecordSnapshots | null;
   status: string; // e.g., "Final", "Upcoming"
