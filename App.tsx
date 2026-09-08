@@ -76,10 +76,11 @@ const App: React.FC = () => {
       load: (signal) => apiRef.current!.fetchBootstrap(signal), getPollAfterSeconds: (response) => response.pollAfterSeconds,
       onLoading: setBootstrapLoading,
       onData: (response: ReadApiResponse<BootstrapResponse>) => {
+        const previousSourceCurrentWeek = sourceCurrentWeekRef.current;
         setBootstrap(response.body);
         setSelectedWeek((previous) => selectWeekAfterBootstrapRefresh(
           previous,
-          sourceCurrentWeekRef.current,
+          previousSourceCurrentWeek,
           response.body.currentWeek,
           selectedWasChanged.current,
         ));
