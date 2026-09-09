@@ -85,6 +85,16 @@ def parse_origins(value: str | None) -> list[str]:
     return origins
 
 
+def _dynamodb_config():
+    from botocore.config import Config
+
+    return Config(
+        connect_timeout=2,
+        read_timeout=5,
+        retries={"mode": "standard", "total_max_attempts": 2},
+    )
+
+
 def build_service_from_environment() -> ReadSnapshotService:
     table_name = os.environ.get("NOSPOIL_GAMES_TABLE")
     if not table_name:
@@ -98,9 +108,11 @@ def build_service_from_environment() -> ReadSnapshotService:
     endpoint = os.environ.get("NOSPOIL_DYNAMODB_LOCAL_ENDPOINT")
     if endpoint:
         kwargs["endpoint_url"] = endpoint
+    kwargs["config"] = _dynamodb_config()
     table = boto3.resource("dynamodb", **kwargs).Table(table_name)
     repository = DynamoReadRepository(
-        table, index_name=os.environ.get("NOSPOIL_SCHEDULE_INDEX", "season-schedule-index")
+        table,
+        index_name=os.environ.get("NOSPOIL_SCHEDULE_INDEX", "season-schedule-index"),
     )
     return ReadSnapshotService(repository, SeasonCalendar(), lambda: datetime.now(UTC))
 

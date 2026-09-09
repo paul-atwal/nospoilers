@@ -1,32 +1,17 @@
-# Render Blueprint - deploys both frontend and backend
+# Render Blueprint - static site only; publication is intentionally manual during D1.
 # https://render.com/docs/blueprint-spec
 
 services:
-  # Backend API (FastAPI)
   - type: web
-    name: nospoil-api
-    runtime: python
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.11"
-    healthCheckPath: /
-    autoDeploy: true
-
-  # Frontend (React/Vite)
-  - type: web
-    name: nospoil-web
+    name: nospoilers-web
     runtime: static
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci && npm run build
     staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false
     headers:
       - path: /*
         name: Cache-Control
         value: public, max-age=0, must-revalidate
-    routes:
-      - type: rewrite
-        source: /api/*
-        destination: https://nospoil-api.onrender.com/api/*
-    autoDeploy: true
+    autoDeploy: false

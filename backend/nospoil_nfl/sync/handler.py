@@ -23,6 +23,16 @@ class _LambdaContext(Protocol):
     def get_remaining_time_in_millis(self) -> int: ...
 
 
+def _dynamodb_config():
+    from botocore.config import Config
+
+    return Config(
+        connect_timeout=2,
+        read_timeout=5,
+        retries={"mode": "standard", "total_max_attempts": 2},
+    )
+
+
 def handle_event(
     raw_event: object,
     service: ScheduleSyncService,
@@ -81,7 +91,10 @@ def lambda_handler(event: object, context: _LambdaContext) -> dict[str, object]:
         MAX_ESPN_SUMMARY_TIMEOUT_SECONDS,
         maximum=MAX_ESPN_SUMMARY_TIMEOUT_SECONDS,
     )
-    table = boto3.resource("dynamodb").Table(table_name)
+    table = boto3.resource(
+        "dynamodb",
+        config=_dynamodb_config(),
+    ).Table(table_name)
     repository = DynamoGameRepository(table, index_name=index_name)
     service = ScheduleSyncService(
         repository,

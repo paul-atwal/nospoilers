@@ -15,6 +15,14 @@ on:
           - due
           - correction
           - verify
+      environment:
+        description: GitHub environment to use for this run
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
       season:
         description: Season year; empty checks current and prior seasons for due mode, or the active season for correction and verify
         required: false
@@ -36,7 +44,7 @@ jobs:
   reconcile:
     name: Reconcile ratings
     runs-on: ubuntu-latest
-    environment: staging
+    environment: ${{ inputs.environment || 'staging' }}
     timeout-minutes: 20
     env:
       MODE: ${{ inputs.mode || 'due' }}
