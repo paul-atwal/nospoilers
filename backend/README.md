@@ -328,19 +328,27 @@ The staging environment uses these repository or environment variables:
   `season-schedule-index`.
 - `NOSPOIL_RECONCILE_ROLE_ARN`: required AWS role ARN for `due` and
   `correction`.
+- `NOSPOIL_OPERATIONS_ROLE_ARN`: required AWS role ARN for schedule repair;
+  this is the same generic environment-bound role/output alias and is limited
+  to GetItem/UpdateItem on the exact table and Query on the exact schedule
+  index.
+- `NOSPOIL_IMPORT_ROLE_ARN`: staging-only role ARN for reviewed inventory
+  import and targeted correction; it writes only `nospoil-staging-games`.
 - `NOSPOIL_AWS_REGION`: required AWS region for `due` and `correction`.
 - `NOSPOIL_NFLVERSE_TIMEOUT_SECONDS`: optional source timeout greater than 0
   and no more than 60 seconds; the default is 20 seconds.
 
 The workflow uses GitHub OIDC and short-lived AWS credentials. It does not use
 long-lived access keys or repository secrets. The eventual least-privilege
-staging role needs only `dynamodb:Query` on this table's season-schedule index
-and `dynamodb:GetItem` and `dynamodb:UpdateItem` on the games table. Its trust
-policy must restrict the OIDC audience to `sts.amazonaws.com` and the subject
-to this repository's `staging` environment (`repo:<OWNER>/<REPO>:environment:staging`;
-replace the placeholders during NS-013 provisioning). NS-013 provisions the
-role, trust policy, table permissions, variables, and alarms; NS-009 creates no
-infrastructure.
+generic reconcile/operations role needs only `dynamodb:Query` on this table's
+season-schedule index and `dynamodb:GetItem` and `dynamodb:UpdateItem` on the
+games table. The separate staging-only import role additionally grants
+`dynamodb:PutItem` on the exact `nospoil-staging-games` table. The import role's
+trust policy must restrict the OIDC audience to `sts.amazonaws.com` and the
+subject to this repository's fixed `staging` environment
+(`repo:<OWNER>/<REPO>:environment:staging`; replace the placeholders during
+NS-013 provisioning). NS-013 provisions the roles, trust policies, table
+permissions, variables, and alarms; NS-009 creates no infrastructure.
 
 GitHub can automatically disable scheduled workflows in public repositories
 after 60 days without repository activity. Re-enable the workflow in GitHub

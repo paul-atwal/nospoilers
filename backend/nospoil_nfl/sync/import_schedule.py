@@ -38,6 +38,10 @@ def main(
             week for week in selected_calendar.known_weeks if week.season == season
         )
         table_name = _required_environment("NOSPOIL_GAMES_TABLE")
+        if table_name != "nospoil-staging-games":
+            raise RuntimeError(
+                "inventory import is restricted to nospoil-staging-games"
+            )
         index_name = os.environ.get("NOSPOIL_SCHEDULE_INDEX") or "season-schedule-index"
         timeout = _bounded_timeout()
         repository = _build_repository(

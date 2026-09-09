@@ -20,7 +20,7 @@ jobs:
       NOSPOIL_GAMES_TABLE: ${{ vars.NOSPOIL_GAMES_TABLE }}
       NOSPOIL_SCHEDULE_INDEX: ${{ vars.NOSPOIL_SCHEDULE_INDEX }}
       NOSPOIL_AWS_REGION: ${{ vars.NOSPOIL_AWS_REGION }}
-      NOSPOIL_OPERATIONS_ROLE_ARN: ${{ vars.NOSPOIL_OPERATIONS_ROLE_ARN }}
+      NOSPOIL_IMPORT_ROLE_ARN: ${{ vars.NOSPOIL_IMPORT_ROLE_ARN }}
       NOSPOIL_ESPN_TIMEOUT_SECONDS: ${{ vars.NOSPOIL_ESPN_TIMEOUT_SECONDS }}
       NOSPOIL_NFLVERSE_TIMEOUT_SECONDS: ${{ vars.NOSPOIL_NFLVERSE_TIMEOUT_SECONDS }}
     steps:
@@ -51,12 +51,12 @@ jobs:
           set -euo pipefail
           [[ "$NOSPOIL_GAMES_TABLE" == "nospoil-staging-games" ]] || { echo "staging table is required" >&2; exit 2; }
           [[ -n "$NOSPOIL_AWS_REGION" ]] || { echo "AWS region is required" >&2; exit 2; }
-          [[ -n "$NOSPOIL_OPERATIONS_ROLE_ARN" ]] || { echo "staging operations role is required" >&2; exit 2; }
+          [[ -n "$NOSPOIL_IMPORT_ROLE_ARN" ]] || { echo "staging import role is required" >&2; exit 2; }
 
       - name: Configure short-lived staging credentials
         uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c
         with:
-          role-to-assume: ${{ vars.NOSPOIL_OPERATIONS_ROLE_ARN }}
+          role-to-assume: ${{ vars.NOSPOIL_IMPORT_ROLE_ARN }}
           aws-region: ${{ vars.NOSPOIL_AWS_REGION }}
           role-session-name: nospoil-staging-import
       - name: Import one reviewed season at a time and reconcile once

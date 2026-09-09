@@ -48,11 +48,22 @@ def test_workflow_uses_pinned_oidc_bounded_dependencies_and_validated_ids() -> N
     assert 'test("^[A-Za-z0-9._:-]+$")' in workflow
     assert 'reconcile_args+=(--game-id "$game_id")' in workflow
     assert "trap 'rm -f \"$output\"' EXIT" in workflow
+    assert "NOSPOIL_IMPORT_ROLE_ARN: ${{ vars.NOSPOIL_IMPORT_ROLE_ARN }}" in workflow
+    assert "role-to-assume: ${{ vars.NOSPOIL_IMPORT_ROLE_ARN }}" in workflow
+    assert '"$NOSPOIL_IMPORT_ROLE_ARN"' in workflow
+    assert "NOSPOIL_OPERATIONS_ROLE_ARN" not in workflow
 
 
 def test_import_permission_is_table_only_and_query_remains_index_only() -> None:
     template = json.loads((ROOT / "infra/environment.template.json").read_text())
-    role = template["Resources"]["GitHubReconcileRole"]
+    role = template["Resources"]["GitHubImportRole"]
+    assert role["Condition"] == "IsStaging"
+    assert template["Conditions"]["IsStaging"] == {
+        "Fn::Equals": [{"Ref": "Environment"}, "staging"]
+    }
+    assert role["Properties"]["RoleName"] == {
+        "Fn::Sub": "nospoil-${Environment}-import"
+    }
     statements = role["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
 
     assert statements == [
@@ -60,8 +71,8 @@ def test_import_permission_is_table_only_and_query_remains_index_only() -> None:
             "Effect": "Allow",
             "Action": [
                 "dynamodb:GetItem",
-                "dynamodb:UpdateItem",
                 "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
             ],
             "Resource": {"Fn::GetAtt": ["GamesTable", "Arn"]},
         },
@@ -87,5 +98,14 @@ def test_import_permission_is_table_only_and_query_remains_index_only() -> None:
         role["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]["Condition"][
             "StringLike"
         ]["token.actions.githubusercontent.com:sub"]["Fn::Sub"]
-        == "repo:${GitHubRepository}:environment:${Environment}"
+        == "repo:${GitHubRepository}:environment:staging"
     )
+    trust = role["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]
+    assert trust["Condition"]["StringEquals"] == {
+        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+    }
+    assert template["Outputs"]["ImportRoleArn"] == {
+        "Condition": "IsStaging",
+        "Description": "Staging-only GitHub OIDC role for inventory import and targeted correction.",
+        "Value": {"Fn::GetAtt": ["GitHubImportRole", "Arn"]},
+    }

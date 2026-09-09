@@ -8,8 +8,10 @@ staging run is verified.
 
 Configure each GitHub environment from the matching CloudFormation outputs:
 `NOSPOIL_GAMES_TABLE`, `NOSPOIL_OPERATIONS_ROLE_ARN`,
-`NOSPOIL_RECONCILE_ROLE_ARN`, `NOSPOIL_AWS_REGION`, and
-`NOSPOIL_SCHEDULE_INDEX` (`season-schedule-index`). Optionally set the bounded
+`NOSPOIL_IMPORT_ROLE_ARN`, `NOSPOIL_RECONCILE_ROLE_ARN`,
+`NOSPOIL_AWS_REGION`, and `NOSPOIL_SCHEDULE_INDEX` (`season-schedule-index`).
+The staging import role is `NOSPOIL_IMPORT_ROLE_ARN` and may write only
+`nospoil-staging-games`. Optionally set the bounded
 `NOSPOIL_ESPN_TIMEOUT_SECONDS` (at most 8) and
 `NOSPOIL_NFLVERSE_TIMEOUT_SECONDS` (at most 60). Never copy staging table or
 role values into the production GitHub environment.

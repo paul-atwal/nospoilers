@@ -149,6 +149,29 @@ def test_unknown_season_fails_before_aws_or_source(monkeypatch, capsys) -> None:
     assert payload["error"] == "UnknownSeasonError"
 
 
+def test_production_table_fails_before_aws_or_source(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "nospoil-production-games")
+    called: list[str] = []
+
+    def forbidden(*args, **kwargs):
+        called.append("called")
+        raise AssertionError("production import must not construct AWS/source")
+
+    assert (
+        main(
+            ["--season", "2020"],
+            boto_resource=forbidden,
+            scoreboard_factory=forbidden,
+        )
+        == 1
+    )
+    assert called == []
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert payload["error"] == "RuntimeError"
+    assert "nospoil-staging-games" in payload["message"]
+
+
 def test_historical_import_requests_every_exact_catalogue_week_with_bounded_workers() -> (
     None
 ):

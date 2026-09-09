@@ -14,8 +14,7 @@ def test_manual_repair_workflow_is_oidc_bound_and_orders_repair_before_rating() 
     assert "environment: ${{ inputs.environment }}" in workflow
     assert "NOSPOIL_OPERATIONS_ROLE_ARN" in workflow
     assert (
-        "NOSPOIL_NFLVERSE_TIMEOUT_SECONDS: "
-        "${{ vars.NOSPOIL_NFLVERSE_TIMEOUT_SECONDS }}"
+        "NOSPOIL_NFLVERSE_TIMEOUT_SECONDS: ${{ vars.NOSPOIL_NFLVERSE_TIMEOUT_SECONDS }}"
     ) in workflow
     assert "pip install -r backend/requirements-reconcile.txt" in workflow
     repair = workflow.index("python -m backend.nospoil_nfl.sync.repair")
@@ -44,7 +43,6 @@ def test_environment_exports_operations_role_with_repair_permissions() -> None:
     }
     assert actions == {
         "dynamodb:GetItem",
-        "dynamodb:PutItem",
         "dynamodb:Query",
         "dynamodb:UpdateItem",
     }
@@ -54,7 +52,6 @@ def test_environment_exports_operations_role_with_repair_permissions() -> None:
             "Action": [
                 "dynamodb:GetItem",
                 "dynamodb:UpdateItem",
-                "dynamodb:PutItem",
             ],
             "Resource": {"Fn::GetAtt": ["GamesTable", "Arn"]},
         },

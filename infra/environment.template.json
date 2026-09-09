@@ -49,6 +49,14 @@
       "AllowedPattern": "^arn:[^ ]+$"
     }
   },
+  "Conditions": {
+    "IsStaging": {
+      "Fn::Equals": [
+        { "Ref": "Environment" },
+        "staging"
+      ]
+    }
+  },
   "Resources": {
     "GamesTable": {
       "Type": "AWS::DynamoDB::Table",
@@ -626,8 +634,7 @@
                   "Effect": "Allow",
                   "Action": [
                     "dynamodb:GetItem",
-                    "dynamodb:UpdateItem",
-                    "dynamodb:PutItem"
+                    "dynamodb:UpdateItem"
                   ],
                   "Resource": {
                     "Fn::GetAtt": [
@@ -647,6 +654,35 @@
             }
           }
         ]
+      }
+    },
+    "GitHubImportRole": {
+      "Condition": "IsStaging",
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": { "Fn::Sub": "nospoil-${Environment}-import" },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": { "Federated": { "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com" } },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+              "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
+              "StringLike": { "token.actions.githubusercontent.com:sub": { "Fn::Sub": "repo:${GitHubRepository}:environment:staging" } }
+            }
+          }]
+        },
+        "Policies": [{
+          "PolicyName": "import-table",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              { "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"], "Resource": { "Fn::GetAtt": ["GamesTable", "Arn"] } },
+              { "Effect": "Allow", "Action": "dynamodb:Query", "Resource": { "Fn::Sub": "${GamesTable.Arn}/index/season-schedule-index" } }
+            ]
+          }
+        }]
       }
     },
     "ReadErrorsAlarm": {
@@ -810,6 +846,11 @@
           "Arn"
         ]
       }
+    },
+    "ImportRoleArn": {
+      "Condition": "IsStaging",
+      "Description": "Staging-only GitHub OIDC role for inventory import and targeted correction.",
+      "Value": { "Fn::GetAtt": ["GitHubImportRole", "Arn"] }
     },
     "ReadFunctionName": {
       "Value": {

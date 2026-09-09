@@ -97,7 +97,6 @@ class InfrastructureContractTest(unittest.TestCase):
             _inline_actions(self.resources["GitHubReconcileRole"]),
             {
                 "dynamodb:GetItem",
-                "dynamodb:PutItem",
                 "dynamodb:Query",
                 "dynamodb:UpdateItem",
             },
@@ -111,6 +110,25 @@ class InfrastructureContractTest(unittest.TestCase):
                 "Fn::Sub"
             ],
             "repo:${GitHubRepository}:environment:${Environment}",
+        )
+        self.assertEqual(
+            _inline_actions(self.resources["GitHubImportRole"]),
+            {
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:Query",
+            },
+        )
+        self.assertEqual(self.resources["GitHubImportRole"]["Condition"], "IsStaging")
+        self.assertEqual(
+            self.env["Conditions"]["IsStaging"],
+            {"Fn::Equals": [{"Ref": "Environment"}, "staging"]},
+        )
+        self.assertEqual(self.env["Outputs"]["ImportRoleArn"]["Condition"], "IsStaging")
+        self.assertEqual(
+            self.env["Outputs"]["ImportRoleArn"]["Value"],
+            {"Fn::GetAtt": ["GitHubImportRole", "Arn"]},
         )
 
     def test_public_read_url_has_both_required_permissions(self) -> None:
