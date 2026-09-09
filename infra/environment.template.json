@@ -800,6 +800,15 @@
         ]
       }
     },
+    "OperationsRoleArn": {
+      "Description": "Environment-bound GitHub OIDC role for repair and reconciliation.",
+      "Value": {
+        "Fn::GetAtt": [
+          "GitHubReconcileRole",
+          "Arn"
+        ]
+      }
+    },
     "ReadFunctionName": {
       "Value": {
         "Ref": "ReadFunction"
