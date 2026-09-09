@@ -71,8 +71,8 @@ export const toViewGame = (apiGame: ApiGame, timeZone?: string): Game => {
     spoilerData: { homeScore: hasScore ? score.home : null, awayScore: hasScore ? score.away : null, summary: '' },
     broadcaster: apiGame.broadcaster ?? undefined,
     isUpcoming,
+    isScheduled: apiGame.status.state === 'scheduled',
     isLive: apiGame.status.state === 'in_progress' || apiGame.status.state === 'delayed',
     odds: apiGame.odds?.details ?? undefined,
   };
 };
-

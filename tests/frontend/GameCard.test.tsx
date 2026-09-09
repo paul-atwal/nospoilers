@@ -133,6 +133,18 @@ describe('GameCard records', () => {
 });
 
 describe('GameCard week context', () => {
+  it('shows postponed status instead of presenting it as a scheduled date', () => {
+    render(<GameCard game={makeGame({
+      status: 'Postponed',
+      isUpcoming: true,
+      isScheduled: false,
+      excitementScore: null,
+      rating: { state: 'pending', label: 'Rating pending', score: null },
+    })} />);
+    expect(screen.getByText('Postponed')).not.toBeNull();
+    expect(screen.getByText('Rating pending')).not.toBeNull();
+  });
+
   it('shows the shared postseason label in the season view', () => {
     render(
       <GameCard
@@ -168,7 +180,7 @@ describe('GameCard identity and accessibility safety', () => {
   });
 
   it('falls back to the supplied abbreviation when a local logo fails', () => {
-    render(<GameCard game={makeGame({ home: { id: '26', name: 'Home Team', abbreviation: 'HME', logoUrl: '/team-logos/26.svg', records: null } })} />);
+    render(<GameCard game={makeGame({ home: { id: '26', name: 'Home Team', abbreviation: 'HME', logoUrl: '/team-logos/26.png', records: null } })} />);
     fireEvent.error(screen.getByRole('img', { name: 'Home Team logo' }));
     expect(screen.queryByRole('img', { name: 'Home Team logo' })).toBeNull();
     expect(screen.getByLabelText('Home Team abbreviation').textContent).toBe('HME');

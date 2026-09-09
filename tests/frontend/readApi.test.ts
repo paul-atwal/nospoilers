@@ -41,6 +41,19 @@ describe('read API URL and decoding contract', () => {
 });
 
 describe('ReadApiClient endpoint and body ownership', () => {
+  it('invokes a stored fetch implementation without changing its receiver', async () => {
+    function receiverSensitiveFetcher(this: unknown): Promise<Response> {
+      if (this !== undefined) throw new TypeError('Illegal invocation');
+      return Promise.resolve(response(bootstrap));
+    }
+    const client = new ReadApiClient({
+      baseUrl: 'http://api.test',
+      fetcher: receiverSensitiveFetcher as typeof fetch,
+    });
+
+    await expect(client.fetchBootstrap()).resolves.toMatchObject({ body: bootstrap });
+  });
+
   it('requests exact paths and retains a cached body on 304', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(response(bootstrap, 200, { ETag: '"bootstrap-v1"' }))

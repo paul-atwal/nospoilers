@@ -170,6 +170,7 @@ export interface Game {
   spoilerData: GameSpoilerData;
   broadcaster?: string;
   isUpcoming?: boolean;
+  isScheduled?: boolean;
   isLive?: boolean;
   odds?: string;
   kickoff?: KickoffView;

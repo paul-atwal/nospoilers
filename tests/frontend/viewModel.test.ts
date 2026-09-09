@@ -28,6 +28,12 @@ describe('read API compatibility view model', () => {
     expect(game.awayScore).toBeNull();
   });
 
+  it('distinguishes scheduled games from paused upcoming games', () => {
+    expect(toViewGame(makeApiGame('scheduled', null)).isScheduled).toBe(true);
+    expect(toViewGame(makeApiGame('postponed', null)).isScheduled).toBe(false);
+    expect(toViewGame(makeApiGame('postponed', null)).isUpcoming).toBe(true);
+  });
+
   it('keeps rating states explicit and maps only confirmed/provisional scores', () => {
     const game = makeApiGame('final', { home: 3, away: 0 });
     expect(toViewGame(game).rating.label).toBe('Rating pending');
@@ -45,9 +51,9 @@ describe('read API compatibility view model', () => {
   it('uses a deterministic unknown kickoff and local logo fallback', () => {
     expect(formatKickoff(null).time).toBe('Kickoff time TBD');
     expect(getTeamLogoUrl({ id: 'unknown', logoKey: 'historical' })).toBeNull();
-    expect(getTeamLogoUrl({ id: '26', logoKey: 'sea' })).toBe('/team-logos/26.svg');
+    expect(getTeamLogoUrl({ id: '26', logoKey: 'sea' })).toBe('/team-logos/26.png');
     expect(getKnownTeamAssets()).toHaveLength(32);
-    expect(getTeamLogoUrl({ id: '17', logoKey: '17' })).toBe('/team-logos/17.svg');
+    expect(getTeamLogoUrl({ id: '17', logoKey: '17' })).toBe('/team-logos/17.png');
   });
 
   it('keeps API ranking order while excluding preseason/upcoming/unrated games and capping at ten', () => {

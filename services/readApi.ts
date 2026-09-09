@@ -355,7 +355,11 @@ export class ReadApiClient {
   private async fetchRaw(path: string, etag: string | null, signal?: AbortSignal): Promise<Response> {
     let response: Response;
     try {
-      response = await this.fetcher(`${this.baseUrl}${path}`, {
+      // Native browser fetch requires its ordinary global receiver. Calling a
+      // stored function as `this.fetcher(...)` supplies the client as `this`
+      // and fails before a network request in Chromium.
+      const fetcher = this.fetcher;
+      response = await fetcher(`${this.baseUrl}${path}`, {
         method: 'GET',
         headers: etag ? { 'If-None-Match': etag } : undefined,
         signal,
