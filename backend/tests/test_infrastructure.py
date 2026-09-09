@@ -95,7 +95,12 @@ class InfrastructureContractTest(unittest.TestCase):
         )
         self.assertEqual(
             _inline_actions(self.resources["GitHubReconcileRole"]),
-            {"dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:Query"},
+            {
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:Query",
+                "dynamodb:UpdateItem",
+            },
         )
         trust = self.resources["GitHubReconcileRole"]["Properties"][
             "AssumeRolePolicyDocument"

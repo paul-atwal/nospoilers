@@ -28,6 +28,21 @@ attention.
 
 ## Reconciliation and overdue work
 
+### Staging inventory import
+
+The manual-only `import-staging.yml` workflow is fixed to the `staging`
+environment and imports the reviewed 189-week catalogue (2020–2026) one
+season at a time. The live legacy Render backend returned `cached_games: 0` on
+2026-09-09 and there is no checked-in cache; no legacy data is copied. Each
+season fetches exact ESPN week envelopes, treats verified empty weeks as valid,
+and emits the exact nflverse-supported final IDs. A rerun is safe: conditional
+writes preserve newer observations and confirmed ratings.
+
+If a source, envelope, AWS, or reconciliation step fails, leave schedules
+disabled, retain the successful season imports, fix the underlying issue, and
+rerun that explicit staging workflow. An empty ID list is intentionally skipped.
+Production import is not selectable here and remains NS-017-B.
+
 Use the existing `reconcile-ratings.yml` workflow in `correction` mode for one
 game or a named season, and `due` mode for routine work. A due game is overdue
 more than 18 hours after its initial eligibility (six hours after provisional

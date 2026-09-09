@@ -42,11 +42,20 @@ def test_environment_exports_operations_role_with_repair_permissions() -> None:
             else [statement["Action"]]
         )
     }
-    assert actions == {"dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:Query"}
+    assert actions == {
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:UpdateItem",
+    }
     assert statements == [
         {
             "Effect": "Allow",
-            "Action": ["dynamodb:GetItem", "dynamodb:UpdateItem"],
+            "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:PutItem",
+            ],
             "Resource": {"Fn::GetAtt": ["GamesTable", "Arn"]},
         },
         {
