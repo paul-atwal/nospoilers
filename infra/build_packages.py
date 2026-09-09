@@ -47,7 +47,11 @@ def _install_dependencies(kind: str, target: Path) -> None:
 def _copy_application(target: Path) -> None:
     package_root = target / "backend" / "nospoil_nfl"
     package_root.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(ROOT / "backend" / "nospoil_nfl", package_root)
+    shutil.copytree(
+        ROOT / "backend" / "nospoil_nfl",
+        package_root,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", ".DS_Store"),
+    )
 
 
 def _reject_excluded_dependencies(target: Path) -> None:

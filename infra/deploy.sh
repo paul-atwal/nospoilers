@@ -34,6 +34,33 @@ aws sts get-caller-identity >/dev/null || {
   exit 2
 }
 
+remove_failed_stack() {
+  local stack_name="$1"
+  local stack_status
+  stack_status="$(aws cloudformation describe-stacks \
+    --region "$AWS_REGION" \
+    --stack-name "$stack_name" \
+    --query 'Stacks[0].StackStatus' \
+    --output text 2>/dev/null || true)"
+  case "$stack_status" in
+    ROLLBACK_COMPLETE|ROLLBACK_FAILED|DELETE_FAILED)
+      echo "Removing failed stack before retry: $stack_name" >&2
+      aws cloudformation delete-stack \
+        --region "$AWS_REGION" \
+        --stack-name "$stack_name"
+      if ! aws cloudformation wait stack-delete-complete \
+        --region "$AWS_REGION" \
+        --stack-name "$stack_name"; then
+        aws cloudformation describe-stack-events \
+          --region "$AWS_REGION" \
+          --stack-name "$stack_name" \
+          --output table >&2 || true
+        exit 1
+      fi
+      ;;
+  esac
+}
+
 foundation_stack="nospoil-foundation"
 environment_stack="nospoil-${environment}"
 artifact_dir="$(mktemp -d)"
@@ -47,6 +74,7 @@ if [[ ! -f "$read_zip" || ! -f "$sync_zip" ]]; then
   exit 1
 fi
 
+remove_failed_stack "$foundation_stack"
 if ! aws cloudformation deploy \
   --region "$AWS_REGION" \
   --stack-name "$foundation_stack" \
@@ -89,6 +117,7 @@ code_sha256="$(openssl dgst -sha256 -binary "$sync_zip" | openssl base64 | tr -d
 aws s3 cp --region "$AWS_REGION" "$read_zip" "s3://${bucket}/${read_key}"
 aws s3 cp --region "$AWS_REGION" "$sync_zip" "s3://${bucket}/${sync_key}"
 
+remove_failed_stack "$environment_stack"
 if ! aws cloudformation deploy \
   --region "$AWS_REGION" \
   --stack-name "$environment_stack" \

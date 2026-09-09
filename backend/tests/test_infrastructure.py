@@ -42,7 +42,7 @@ class InfrastructureContractTest(unittest.TestCase):
         )
         self.assertEqual(properties["BillingMode"], "PAY_PER_REQUEST")
         self.assertEqual(properties["SSESpecification"], {"SSEEnabled": True})
-        self.assertEqual(table["DeletionPolicy"], "Retain")
+        self.assertEqual(table["DeletionPolicy"], "RetainExceptOnCreate")
         self.assertEqual(table["UpdateReplacePolicy"], "Retain")
         self.assertEqual(
             properties["GlobalSecondaryIndexes"][0]["IndexName"],
@@ -294,6 +294,11 @@ class InfrastructureContractTest(unittest.TestCase):
         self.assertIn("--no-fail-on-empty-changeset", script)
         self.assertNotIn("--disable-rollback", script)
         self.assertNotIn("--on-failure DO_NOTHING", script)
+        self.assertIn("ROLLBACK_COMPLETE|ROLLBACK_FAILED|DELETE_FAILED", script)
+        self.assertIn('remove_failed_stack "$foundation_stack"', script)
+        self.assertIn('remove_failed_stack "$environment_stack"', script)
+        self.assertIn("cloudformation delete-stack", script)
+        self.assertIn("cloudformation wait stack-delete-complete", script)
         self.assertIn('GitHubRepository="$GITHUB_REPOSITORY"', script)
         self.assertIn('CodeSha256="$code_sha256"', script)
 
@@ -331,6 +336,31 @@ class PackageContractTest(unittest.TestCase):
             (root / "pandas").mkdir()
             with self.assertRaisesRegex(RuntimeError, "reconciliation-only"):
                 self.module._reject_excluded_dependencies(root)
+
+    def test_application_copy_excludes_generated_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source" / "backend" / "nospoil_nfl"
+            source.mkdir(parents=True)
+            (source / "handler.py").write_text("ok = True\n")
+            (source / ".DS_Store").write_bytes(b"metadata")
+            cache = source / "__pycache__"
+            cache.mkdir()
+            (cache / "handler.cpython-313.pyc").write_bytes(b"bytecode")
+            target = root / "target"
+            target.mkdir()
+
+            original_root = self.module.ROOT
+            self.module.ROOT = root / "source"
+            try:
+                self.module._copy_application(target)
+            finally:
+                self.module.ROOT = original_root
+
+            copied = target / "backend" / "nospoil_nfl"
+            self.assertTrue((copied / "handler.py").is_file())
+            self.assertFalse((copied / ".DS_Store").exists())
+            self.assertFalse((copied / "__pycache__").exists())
 
 
 if __name__ == "__main__":
