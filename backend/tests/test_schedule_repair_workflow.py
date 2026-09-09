@@ -13,6 +13,10 @@ def test_manual_repair_workflow_is_oidc_bound_and_orders_repair_before_rating() 
     assert "id-token: write" in workflow
     assert "environment: ${{ inputs.environment }}" in workflow
     assert "NOSPOIL_OPERATIONS_ROLE_ARN" in workflow
+    assert (
+        "NOSPOIL_NFLVERSE_TIMEOUT_SECONDS: "
+        "${{ vars.NOSPOIL_NFLVERSE_TIMEOUT_SECONDS }}"
+    ) in workflow
     assert "pip install -r backend/requirements-reconcile.txt" in workflow
     repair = workflow.index("python -m backend.nospoil_nfl.sync.repair")
     reconcile = workflow.index("python -m backend.nospoil_nfl.rating.reconcile")

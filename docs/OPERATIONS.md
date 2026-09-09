@@ -19,10 +19,12 @@ role values into the production GitHub environment.
 Check the read URL for the expected season/week envelope and complete game list.
 Inspect the sync Lambda logs and CloudWatch alarms for errors or throttles. Each
 game exposes `scheduleCheckedAt`, `liveSourceCheckedAt`, and
-`confirmationWorkRemains`; detailed retry attempt/time/error data is available
-only in the DynamoDB item and reconciliation workflow summary. A schedule check
-older than one day during the active season is stale. During a game window, a
-`liveSourceCheckedAt` value older than two minutes needs operator attention.
+`confirmationWorkRemains`. The reconciliation workflow summary reports
+aggregate retry and failure counts; its logs include retry attempt/error detail,
+while the DynamoDB item is the source for the exact next-attempt time. A
+schedule check older than one day during the active season is stale. During a
+game window, a `liveSourceCheckedAt` value older than two minutes needs operator
+attention.
 
 ## Reconciliation and overdue work
 
