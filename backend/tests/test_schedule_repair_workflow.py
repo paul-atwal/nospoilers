@@ -17,6 +17,10 @@ def test_manual_repair_workflow_is_oidc_bound_and_orders_repair_before_rating() 
     repair = workflow.index("python -m backend.nospoil_nfl.sync.repair")
     reconcile = workflow.index("python -m backend.nospoil_nfl.rating.reconcile")
     assert repair < reconcile
+    assert "steps.repair.outputs.season" in workflow
+    assert "steps.repair.outputs.reconciliation_game_ids" in workflow
+    assert 'args=(--mode correction --season "$REPAIR_SEASON")' in workflow
+    assert 'args+=(--game-id "$game_id")' in workflow
     assert "role-session-name: nospoil-schedule-repair" in workflow
     assert '--season "$SEASON" --phase "$PHASE" --week "$WEEK"' in workflow
 
@@ -35,6 +39,18 @@ def test_environment_exports_operations_role_with_repair_permissions() -> None:
         )
     }
     assert actions == {"dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:Query"}
+    assert statements == [
+        {
+            "Effect": "Allow",
+            "Action": ["dynamodb:GetItem", "dynamodb:UpdateItem"],
+            "Resource": {"Fn::GetAtt": ["GamesTable", "Arn"]},
+        },
+        {
+            "Effect": "Allow",
+            "Action": "dynamodb:Query",
+            "Resource": {"Fn::Sub": "${GamesTable.Arn}/index/season-schedule-index"},
+        },
+    ]
     trust = role["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]
     assert trust["Action"] == "sts:AssumeRoleWithWebIdentity"
     assert (

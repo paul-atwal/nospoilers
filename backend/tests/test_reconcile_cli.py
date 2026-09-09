@@ -81,7 +81,7 @@ def test_attention_result_returns_failure_annotation_and_nonzero_exit(
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.md"))
 
     class FakeBoto3:
-        def resource(self, name: str) -> object:
+        def resource(self, name: str, **kwargs: object) -> object:
             assert name == "dynamodb"
             return SimpleNamespace(Table=lambda table_name: object())
 
@@ -112,7 +112,7 @@ def test_routine_due_retry_is_success_without_attention_conditions(
     monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
 
     class FakeBoto3:
-        def resource(self, name: str) -> object:
+        def resource(self, name: str, **kwargs: object) -> object:
             return SimpleNamespace(Table=lambda table_name: object())
 
     monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())
@@ -158,7 +158,7 @@ def test_scheduled_due_run_uses_real_service_for_current_and_prior_seasons(
     loaded: list[int] = []
 
     class FakeBoto3:
-        def resource(self, name: str) -> object:
+        def resource(self, name: str, **kwargs: object) -> object:
             return SimpleNamespace(Table=lambda table_name: object())
 
     monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())
@@ -197,7 +197,7 @@ def test_explicit_season_limits_due_run(monkeypatch, capsys) -> None:
     monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
 
     class FakeBoto3:
-        def resource(self, name: str) -> object:
+        def resource(self, name: str, **kwargs: object) -> object:
             return SimpleNamespace(Table=lambda table_name: object())
 
     monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())
@@ -225,13 +225,62 @@ def test_explicit_season_limits_due_run(monkeypatch, capsys) -> None:
     assert "seasons" not in payload
 
 
+def test_repeated_game_ids_use_one_bounded_season_reconciliation(
+    monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
+    resource_kwargs: list[dict[str, object]] = []
+
+    class FakeBoto3:
+        def resource(self, name: str, **kwargs: object) -> object:
+            assert name == "dynamodb"
+            resource_kwargs.append(kwargs)
+            return SimpleNamespace(Table=lambda table_name: object())
+
+    monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())
+    calls: list[tuple[int, tuple[str, ...]]] = []
+
+    def build_service(repository, schedule_provider, play_provider):
+        def run(season, *, now, mode, game_ids):
+            assert mode == "correction"
+            calls.append((season, tuple(game_ids)))
+            return ReconciliationResult(selected=2, downloads=1)
+
+        return SimpleNamespace(run=run)
+
+    assert (
+        main(
+            [
+                "--mode",
+                "correction",
+                "--season",
+                "2020",
+                "--game-id",
+                "one",
+                "--game-id",
+                "two",
+            ],
+            clock=lambda: NOW,
+            service_factory=build_service,
+        )
+        == 0
+    )
+
+    assert calls == [(2020, ("one", "two"))]
+    config = resource_kwargs[0]["config"]
+    assert config.connect_timeout == 2
+    assert config.read_timeout == 5
+    assert config.retries == {"mode": "standard", "total_max_attempts": 2}
+    assert json.loads(capsys.readouterr().out.splitlines()[0])["downloads"] == 1
+
+
 def test_real_service_events_are_info_stderr_with_warning_root_handler(
     monkeypatch, capsys
 ) -> None:
     monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
 
     class FakeBoto3:
-        def resource(self, name: str) -> object:
+        def resource(self, name: str, **kwargs: object) -> object:
             return SimpleNamespace(Table=lambda table_name: object())
 
     game = make_game("logged")
@@ -286,7 +335,7 @@ def test_repeated_main_calls_keep_one_current_stderr_handler(monkeypatch, capsys
     monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
 
     class FakeBoto3:
-        def resource(self, name: str) -> object:
+        def resource(self, name: str, **kwargs: object) -> object:
             return SimpleNamespace(Table=lambda table_name: object())
 
     monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())
@@ -315,7 +364,7 @@ def test_unexpected_cli_failure_is_structured_and_score_free(monkeypatch, capsys
     monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "games")
 
     class FakeBoto3:
-        def resource(self, name: str) -> object:
+        def resource(self, name: str, **kwargs: object) -> object:
             return SimpleNamespace(Table=lambda table_name: object())
 
     monkeypatch.setitem(sys.modules, "boto3", FakeBoto3())

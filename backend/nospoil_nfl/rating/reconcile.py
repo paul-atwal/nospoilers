@@ -12,6 +12,7 @@ import os
 import sys
 from typing import Callable, Sequence
 
+from ..game.models import GameId
 from ..nflverse import load_nflverse_season
 from ..providers import NflversePlayClient, NflverseScheduleClient
 from ..providers.errors import ProviderError
@@ -73,7 +74,7 @@ def main(
         from ..game.dynamodb_repository import DynamoGameRepository
 
         repository = DynamoGameRepository(
-            boto3.resource("dynamodb").Table(table_name),
+            boto3.resource("dynamodb", config=_dynamodb_config()).Table(table_name),
             index_name=index_name,
         )
         service = service_factory(
@@ -81,15 +82,20 @@ def main(
             schedule_provider,
             play_provider,
         )
-        results = [
-            service.run(
-                season,
-                now=now,
-                mode=args.mode,
-                game_id=args.game_id,
-            )
-            for season in seasons
-        ]
+        target_ids = tuple(GameId(value) for value in (args.game_id or ()))
+        results = []
+        for season in seasons:
+            run_kwargs: dict[str, object] = {
+                "now": now,
+                "mode": args.mode,
+            }
+            if len(target_ids) == 1:
+                run_kwargs["game_id"] = target_ids[0]
+            elif target_ids:
+                run_kwargs["game_ids"] = target_ids
+            else:
+                run_kwargs["game_id"] = None
+            results.append(service.run(season, **run_kwargs))
         result = _combine_results(results)
         payload = _result_payload(
             result,
@@ -147,13 +153,28 @@ def _parse_args(argv: Sequence[str] | None) -> Namespace:
         default="due",
     )
     parser.add_argument("--season", type=_positive_int)
-    parser.add_argument("--game-id")
+    parser.add_argument("--game-id", action="append")
     args = parser.parse_args(argv)
-    if args.game_id is not None and args.mode != "correction":
+    if args.game_id and args.mode != "correction":
         parser.error("--game-id is allowed only with --mode correction")
-    if args.game_id is not None and not args.game_id.strip():
-        parser.error("--game-id must be non-empty text")
+    if args.game_id:
+        normalized = [value.strip() for value in args.game_id]
+        if any(not value for value in normalized):
+            parser.error("--game-id must be non-empty text")
+        if len(normalized) != len(set(normalized)):
+            parser.error("--game-id values must be unique")
+        args.game_id = normalized
     return args
+
+
+def _dynamodb_config():
+    from botocore.config import Config
+
+    return Config(
+        connect_timeout=2,
+        read_timeout=5,
+        retries={"mode": "standard", "total_max_attempts": 2},
+    )
 
 
 def _configure_application_logging() -> logging.Logger:

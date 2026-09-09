@@ -626,20 +626,21 @@
                   "Effect": "Allow",
                   "Action": [
                     "dynamodb:GetItem",
-                    "dynamodb:UpdateItem",
-                    "dynamodb:Query"
+                    "dynamodb:UpdateItem"
                   ],
-                  "Resource": [
-                    {
-                      "Fn::GetAtt": [
-                        "GamesTable",
-                        "Arn"
-                      ]
-                    },
-                    {
-                      "Fn::Sub": "${GamesTable.Arn}/index/season-schedule-index"
-                    }
-                  ]
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "GamesTable",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": "dynamodb:Query",
+                  "Resource": {
+                    "Fn::Sub": "${GamesTable.Arn}/index/season-schedule-index"
+                  }
                 }
               ]
             }

@@ -116,6 +116,7 @@ class NflverseReconciliationService:
         now: datetime,
         mode: ReconciliationMode = "due",
         game_id: GameId | None = None,
+        game_ids: tuple[GameId, ...] | None = None,
     ) -> ReconciliationResult:
         """Run due reconciliation or an explicit correction for one season."""
         _require_utc(now)
@@ -123,10 +124,7 @@ class NflverseReconciliationService:
             raise ValueError("season must be a positive integer")
         if mode not in {"due", "correction"}:
             raise ValueError("mode must be due or correction")
-        if game_id is not None and (
-            not isinstance(game_id, str) or not game_id.strip()
-        ):
-            raise ValueError("game_id must be non-empty text")
+        target_game_ids = _target_game_ids(game_id, game_ids)
 
         games = self._repository.list_season(season)
         state = _RunState()
@@ -136,19 +134,9 @@ class NflverseReconciliationService:
                 for game in games
                 if confirmation_work_remains(game)
             )
-        selected = self._select_games(games, now, mode, game_id, state)
+        selected = self._select_games(games, now, mode, target_game_ids, state)
         state.selected = len(selected)
         if not selected:
-            if mode == "correction" and game_id is not None and not any(
-                game.game_id == game_id for game in games
-            ):
-                state.failures = 1
-                state.manual_correction_failure = True
-                self._emit(
-                    "error",
-                    "nflverse_correction_failed",
-                    error_code="game_not_found",
-                )
             return state.result()
 
         state.downloads = 1
@@ -182,7 +170,7 @@ class NflverseReconciliationService:
             for candidate in selected:
                 current = self._repository.get(candidate.game_id)
                 if current is None or not self._still_relevant(
-                    current, now, mode, game_id
+                    current, now, mode, target_game_ids
                 ):
                     self._emit(
                         "info",
@@ -200,7 +188,9 @@ class NflverseReconciliationService:
         self._emit("info", "nflverse_download_succeeded", season=season)
         for candidate in selected:
             current = self._repository.get(candidate.game_id)
-            if current is None or not self._still_relevant(current, now, mode, game_id):
+            if current is None or not self._still_relevant(
+                current, now, mode, target_game_ids
+            ):
                 self._emit(
                     "info",
                     "nflverse_reconciliation_skipped",
@@ -221,22 +211,39 @@ class NflverseReconciliationService:
         *,
         now: datetime,
         game_id: GameId | None = None,
+        game_ids: tuple[GameId, ...] | None = None,
     ) -> ReconciliationResult:
         """Recalculate all confirmed games or one named final game."""
-        return self.run(season, now=now, mode="correction", game_id=game_id)
+        return self.run(
+            season,
+            now=now,
+            mode="correction",
+            game_id=game_id,
+            game_ids=game_ids,
+        )
 
     def _select_games(
         self,
         games: list[Game],
         now: datetime,
         mode: ReconciliationMode,
-        game_id: GameId | None,
+        target_game_ids: frozenset[GameId] | None,
         state: _RunState,
     ) -> list[Game]:
         if mode == "correction":
-            if game_id is not None:
-                selected = [game for game in games if game.game_id == game_id]
-                if selected and selected[0].status.state is not GameState.FINAL:
+            if target_game_ids is not None:
+                selected = [game for game in games if game.game_id in target_game_ids]
+                selected_ids = {game.game_id for game in selected}
+                if selected_ids != target_game_ids:
+                    state.failures = 1
+                    state.manual_correction_failure = True
+                    self._emit(
+                        "error",
+                        "nflverse_correction_failed",
+                        error_code="game_not_found",
+                    )
+                    return []
+                if any(game.status.state is not GameState.FINAL for game in selected):
                     state.failures = 1
                     state.manual_correction_failure = True
                     self._emit(
@@ -245,14 +252,22 @@ class NflverseReconciliationService:
                         error_code="game_not_final",
                     )
                     return []
-                if selected and not confirmation_support(selected[0].season_week).supported:
+                unsupported = next(
+                    (
+                        confirmation_support(game.season_week)
+                        for game in selected
+                        if not confirmation_support(game.season_week).supported
+                    ),
+                    None,
+                )
+                if unsupported is not None:
                     state.failures = 1
                     state.manual_correction_failure = True
                     self._emit(
                         "error",
                         "nflverse_correction_failed",
                         error_code="unsupported_competition",
-                        reason=confirmation_support(selected[0].season_week).reason,
+                        reason=unsupported.reason,
                     )
                     return []
                 return selected
@@ -283,14 +298,16 @@ class NflverseReconciliationService:
         current: Game,
         now: datetime,
         mode: ReconciliationMode,
-        game_id: GameId | None,
+        target_game_ids: frozenset[GameId] | None,
     ) -> bool:
         if current.status.state is not GameState.FINAL:
             return False
         if not confirmation_support(current.season_week).supported:
             return False
         if mode == "correction":
-            return game_id is not None or current.rating.state is RatingState.CONFIRMED
+            if target_game_ids is not None:
+                return current.game_id in target_game_ids
+            return current.rating.state is RatingState.CONFIRMED
         return current.rating.state is not RatingState.CONFIRMED and _confirmation_due_at(current) <= now
 
     def _reconcile_one(
@@ -475,6 +492,25 @@ def _initial_confirmation_due_at(game: Game) -> datetime:
 
 def _is_overdue(game: Game, now: datetime) -> bool:
     return now - _initial_confirmation_due_at(game) > OVERDUE_AFTER
+
+
+def _target_game_ids(
+    game_id: GameId | None,
+    game_ids: tuple[GameId, ...] | None,
+) -> frozenset[GameId] | None:
+    if game_id is not None and game_ids is not None:
+        raise ValueError("game_id and game_ids are mutually exclusive")
+    raw_ids = (game_id,) if game_id is not None else game_ids
+    if raw_ids is None:
+        return None
+    if not isinstance(raw_ids, tuple) or not raw_ids:
+        raise ValueError("game_ids must be a non-empty tuple")
+    if any(not isinstance(value, str) or not value.strip() for value in raw_ids):
+        raise ValueError("game IDs must be non-empty text")
+    targets = frozenset(raw_ids)
+    if len(targets) != len(raw_ids):
+        raise ValueError("game IDs must be unique")
+    return targets
 
 
 def _provider_error_code(error: ProviderError) -> str:

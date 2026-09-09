@@ -20,6 +20,7 @@ from ..game.repository import GameRepository
 from ..game.updates import UNSET, ScheduleUpdate, TeamScheduleUpdate, WriteResult
 from ..providers import EspnScoreboardClient, ScheduleGame, ScoreboardBatch
 from ..providers.errors import ProviderError
+from ..rating.confirmation import is_confirmation_supported
 
 DEFAULT_ESPN_TIMEOUT_SECONDS = 8.0
 MAX_ESPN_TIMEOUT_SECONDS = 8.0
@@ -57,6 +58,9 @@ class RepairResult:
     selected: int
     repaired: int
     unchanged: int
+    season: int
+    game_ids: tuple[GameId, ...]
+    reconciliation_game_ids: tuple[GameId, ...]
 
 
 class ScheduleRepairService:
@@ -139,7 +143,19 @@ class ScheduleRepairService:
                     f"conditional repair write lost race for {current.game_id}"
                 )
             repaired += 1
-        return RepairResult(scope, len(selected), repaired, unchanged)
+        return RepairResult(
+            scope=scope,
+            selected=len(selected),
+            repaired=repaired,
+            unchanged=unchanged,
+            season=requested_week.season,
+            game_ids=tuple(game.game_id for game in selected),
+            reconciliation_game_ids=tuple(
+                game.game_id
+                for game in selected
+                if is_confirmation_supported(game.season_week)
+            ),
+        )
 
     def _select_durable_games(
         self, scope: RepairScope
@@ -195,7 +211,7 @@ def main(
     argv: Sequence[str] | None = None,
     *,
     repository_factory: Callable[[str, str], GameRepository] | None = None,
-    scoreboard_factory: Callable[[float], EspnScoreboardClient] = EspnScoreboardClient,
+    scoreboard_factory: Callable[..., EspnScoreboardClient] = EspnScoreboardClient,
 ) -> int:
     """Run one explicit repair and print a compact machine-readable result."""
     try:
@@ -211,13 +227,18 @@ def main(
         )
         result = ScheduleRepairService(
             repository,
-            scoreboard_factory(timeout),
+            scoreboard_factory(timeout_seconds=timeout),
         ).run(scope)
         payload = {
             "ok": True,
             "selected": result.selected,
             "repaired": result.repaired,
             "unchanged": result.unchanged,
+            "season": result.season,
+            "game_ids": [str(game_id) for game_id in result.game_ids],
+            "reconciliation_game_ids": [
+                str(game_id) for game_id in result.reconciliation_game_ids
+            ],
             "scope": _scope_payload(scope),
         }
         _publish(payload)
@@ -326,6 +347,15 @@ def _scope_payload(scope: RepairScope) -> dict[str, object]:
 
 def _publish(payload: dict[str, object]) -> None:
     print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+    output_path = os.environ.get("GITHUB_OUTPUT")
+    if payload["ok"] and output_path is not None and output_path.strip():
+        with open(output_path, "a", encoding="utf-8") as output:
+            output.write(f"season={payload['season']}\n")
+            output.write(
+                "reconciliation_game_ids="
+                + json.dumps(payload["reconciliation_game_ids"], separators=(",", ":"))
+                + "\n"
+            )
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path is None or not summary_path.strip():
         return

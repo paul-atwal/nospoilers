@@ -95,6 +95,7 @@ jobs:
           role-session-name: nospoil-schedule-repair
 
       - name: Repair ESPN final score
+        id: repair
         shell: bash
         run: |
           set -euo pipefail
@@ -110,12 +111,20 @@ jobs:
       # consume the durable final score.
       - name: Reconcile corrected rating input
         shell: bash
+        env:
+          REPAIR_SEASON: ${{ steps.repair.outputs.season }}
+          RECONCILIATION_GAME_IDS: ${{ steps.repair.outputs.reconciliation_game_ids }}
         run: |
           set -euo pipefail
-          args=(--mode correction)
-          if [[ -n "$GAME_ID" ]]; then
-            args+=(--game-id "$GAME_ID")
-          else
-            args+=(--season "$SEASON")
+          [[ "$REPAIR_SEASON" =~ ^[1-9][0-9]{3}$ ]] || { echo "repair did not return a valid season" >&2; exit 1; }
+          jq -e 'type == "array" and all(.[]; type == "string" and length > 0)' <<< "$RECONCILIATION_GAME_IDS" >/dev/null
+          args=(--mode correction --season "$REPAIR_SEASON")
+          while IFS= read -r game_id; do
+            [[ "$game_id" =~ ^[A-Za-z0-9_.:-]+$ ]] || { echo "repair returned an invalid game ID" >&2; exit 1; }
+            args+=(--game-id "$game_id")
+          done < <(jq -r '.[]' <<< "$RECONCILIATION_GAME_IDS")
+          if (( ${#args[@]} == 4 )); then
+            echo "No selected games support nflverse rating confirmation."
+            exit 0
           fi
           python -m backend.nospoil_nfl.rating.reconcile "${args[@]}"

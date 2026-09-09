@@ -130,6 +130,9 @@ def test_game_scope_supports_prior_season_and_preserves_owned_fields() -> None:
     )
 
     assert result.repaired == 1
+    assert result.season == 2020
+    assert result.game_ids == (current.game_id,)
+    assert result.reconciliation_game_ids == ()
     assert scoreboard.calls == [current.season_week]
     update = repository.writes[0]
     assert update.kickoff_at == current.kickoff_at
@@ -219,9 +222,13 @@ def test_scope_parser_requires_exact_game_or_week_scope() -> None:
         _parse_args(["--season", "2020", "--phase", "preseason"])
 
 
-def test_main_runs_with_injected_clients_and_reports_scope(monkeypatch, capsys) -> None:
+def test_main_runs_with_injected_clients_and_reports_scope(
+    monkeypatch, tmp_path, capsys
+) -> None:
     current = game()
     monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "staging-games")
+    output_path = tmp_path / "outputs"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output_path))
     batch = source_for(current, score=Score(27, 24))
     repositories: list[tuple[str, str]] = []
 
@@ -233,9 +240,33 @@ def test_main_runs_with_injected_clients_and_reports_scope(monkeypatch, capsys) 
         main(
             ["--season", "2020", "--phase", "preseason", "--week", "1"],
             repository_factory=repository_factory,
-            scoreboard_factory=lambda timeout: FakeScoreboard(batch),
+            scoreboard_factory=lambda *, timeout_seconds: FakeScoreboard(batch),
         )
         == 0
     )
     assert repositories == [("staging-games", "season-schedule-index")]
     assert '"ok":true' in capsys.readouterr().out
+    assert output_path.read_text().splitlines() == [
+        "season=2020",
+        "reconciliation_game_ids=[]",
+    ]
+
+
+def test_supported_week_returns_exact_reconciliation_game_ids() -> None:
+    first = game("one", phase=SeasonPhase.REGULAR_SEASON)
+    second = game("two", phase=SeasonPhase.REGULAR_SEASON)
+    batch = ScoreboardBatch(
+        NOW,
+        first.season_week,
+        (
+            source_for(first, score=Score(27, 24)).games[0],
+            source_for(second, score=Score(30, 20)).games[0],
+        ),
+    )
+
+    result = ScheduleRepairService(
+        FakeRepository((first, second)), FakeScoreboard(batch)
+    ).run(RepairScope(season_week=first.season_week))
+
+    assert result.season == 2020
+    assert result.reconciliation_game_ids == (first.game_id, second.game_id)
