@@ -9,4 +9,3 @@
   <path d="M335 202L455 202" class="l"/><text x="360" y="185" class="b">legacy fields</text><path d="M775 202L895 202" class="l"/>
   <rect x="55" y="440" width="1090" height="190" rx="12" class="w"/><text x="80" y="482" class="h">Spoiler/fallback risk surface</text><text x="80" y="520" class="b">Reveal state is boolean rather than game identity; component reuse can carry a reveal to another game.</text><text x="80" y="552" class="b">Missing pregame/postgame shapes cannot stay independent; card owns domain selection instead of display-ready values.</text><text x="80" y="584" class="b">No explicit local-asset failure branch; optional kickoff and rating states do not have complete accessible labels.</text>
 </svg>
-

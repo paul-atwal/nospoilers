@@ -16,4 +16,3 @@
   <rect x="60" y="620" width="1210" height="145" rx="12" class="bad"/><text x="85" y="660" class="label">Failure and ownership gaps</text><text x="85" y="695" class="body">No AbortController, generation, polling policy, ETag/body retention, or page-return refresh.</text><text x="85" y="726" class="body">Schedule errors collapse to []; rating transport errors collapse to -1; old responses may update a newer selection.</text>
   <path d="M185 250 L185 620" class="line danger"/>
 </svg>
-

@@ -46,4 +46,3 @@ C1 replaces frontend transport and refresh ownership without changing the render
 - Focused client tests: base URL semantics, paths, ETag/304 retention, cacheless-304 recovery, Retry-After, body validation, and endpoint cache isolation.
 - Focused lifecycle tests: bootstrap retry, catalogue navigation/ends, selection independence during rollover, polling from retained envelopes, `null` timer behavior, stale response suppression, view cancellation, and coalesced page-return refresh.
 - `npm test -- --run` (or project equivalent), `npm run typecheck`, and `npm run build` after C1.
-
