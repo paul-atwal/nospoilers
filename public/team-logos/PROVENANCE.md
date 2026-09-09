@@ -1,6 +1,6 @@
 # Bundled team assets
 
-Asset map version: `2026-09-08-nfl32`.
+Asset map version: `2026-09-08-nfl32-v2`.
 
 The map covers all 32 active NFL teams using the numeric ESPN team IDs emitted
 by `backend/nospoil_nfl/providers/espn_scoreboard.py` as both `id` and
@@ -19,3 +19,8 @@ owners' rights; bundling changes delivery, not ownership. They are used only for
 team identification in the same UI that previously loaded them remotely.
 Unknown or historical identities fall back to API abbreviation/display text,
 and local image-load failures take the same path.
+
+Washington (`id`/`logoKey` `28`) is the unchanged current directory asset from
+`https://a.espncdn.com/i/teamlogos/nfl/500/wsh.png`, retrieved 2026-09-08;
+SHA-256: `2f67805ef9e385a4c67adb0a9320706bd481a52e3aa0e0faea995dad2b501112`.
+Its provider abbreviation is `WSH`.

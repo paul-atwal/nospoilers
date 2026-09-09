@@ -30,6 +30,12 @@ Commands and topology:
 
 ```bash
 docker run --rm --name nospoil-dynamodb-chunk-c --publish 127.0.0.1:8000:8000 amazon/dynamodb-local:2.6.1 -jar DynamoDBLocal.jar -inMemory -sharedDb
+export NOSPOIL_GAMES_TABLE=nospoil-games
+export NOSPOIL_DYNAMODB_LOCAL_ENDPOINT=http://127.0.0.1:8000
+export AWS_DEFAULT_REGION=us-west-2
+export AWS_ACCESS_KEY_ID=local
+export AWS_SECRET_ACCESS_KEY=local
+export NOSPOIL_FRONTEND_ORIGINS=http://127.0.0.1:3001
 python -m tests.browser.seedLocalApi
 python -m uvicorn backend.nospoil_nfl.api.local:app --host 127.0.0.1 --port 8001
 VITE_DEV_API_PROXY=http://127.0.0.1:8001 npm run dev -- --host 127.0.0.1 --port 3001
