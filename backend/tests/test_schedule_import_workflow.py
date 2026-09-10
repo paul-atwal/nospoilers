@@ -12,6 +12,7 @@ import pytest
 
 ROOT = Path(__file__).parents[2]
 WORKFLOW = ROOT / ".github/workflows/import-staging.yml"
+PRODUCTION_WORKFLOW = ROOT / ".github/workflows/import-production.yml"
 
 
 def test_staging_import_is_manual_fixed_and_sequential() -> None:
@@ -29,6 +30,22 @@ def test_staging_import_is_manual_fixed_and_sequential() -> None:
     assert workflow.count("python -m backend.nospoil_nfl.sync.import_schedule") == 1
     assert workflow.count("python -m backend.nospoil_nfl.rating.reconcile") == 1
     assert "--mode correction --season" in workflow
+
+
+def test_production_import_is_manual_fixed_and_sequential() -> None:
+    workflow = PRODUCTION_WORKFLOW.read_text()
+
+    assert "workflow_dispatch:" in workflow
+    assert "schedule:" not in workflow
+    assert "environment: production" in workflow
+    assert "nospoil-production-games" in workflow
+    assert "nospoil-staging-games" not in workflow
+    assert "contents: read" in workflow
+    assert "id-token: write" in workflow
+    assert 'seasons=(2020 2021 2022 2023 2024 2025 2026)' in workflow
+    assert workflow.count("python -m backend.nospoil_nfl.sync.import_schedule") == 1
+    assert workflow.count("python -m backend.nospoil_nfl.rating.reconcile") == 1
+    assert "Production inventory completed with attention required." in workflow
 
 
 @pytest.mark.parametrize("failure_stage", ["import", "reconcile", "malformed"])
@@ -127,10 +144,7 @@ def test_workflow_uses_pinned_oidc_bounded_dependencies_and_validated_ids() -> N
 def test_import_permission_is_table_only_and_query_remains_index_only() -> None:
     template = json.loads((ROOT / "infra/environment.template.json").read_text())
     role = template["Resources"]["GitHubImportRole"]
-    assert role["Condition"] == "IsStaging"
-    assert template["Conditions"]["IsStaging"] == {
-        "Fn::Equals": [{"Ref": "Environment"}, "staging"]
-    }
+    assert "Condition" not in role
     assert role["Properties"]["RoleName"] == {
         "Fn::Sub": "nospoil-${Environment}-import"
     }
@@ -168,14 +182,13 @@ def test_import_permission_is_table_only_and_query_remains_index_only() -> None:
         role["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]["Condition"][
             "StringLike"
         ]["token.actions.githubusercontent.com:sub"]["Fn::Sub"]
-        == "repo:${GitHubRepository}:environment:staging"
+        == "repo:${GitHubRepository}:environment:${Environment}"
     )
     trust = role["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]
     assert trust["Condition"]["StringEquals"] == {
         "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
     }
     assert template["Outputs"]["ImportRoleArn"] == {
-        "Condition": "IsStaging",
-        "Description": "Staging-only GitHub OIDC role for inventory import and targeted correction.",
+        "Description": "Environment-bound GitHub OIDC role for inventory import and targeted correction.",
         "Value": {"Fn::GetAtt": ["GitHubImportRole", "Arn"]},
     }

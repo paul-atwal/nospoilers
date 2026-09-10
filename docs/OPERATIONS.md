@@ -12,8 +12,8 @@ Configure each GitHub environment from the matching CloudFormation outputs:
 `NOSPOIL_AWS_REGION`, and `NOSPOIL_SCHEDULE_INDEX` (`season-schedule-index`).
 The repository-level variable `NOSPOIL_RECONCILIATION_SCHEDULE_ENABLED`
 defaults to off; set it to `true` only after production verification.
-The staging import role is `NOSPOIL_IMPORT_ROLE_ARN` and may write only
-`nospoil-staging-games`. Optionally set the bounded
+Each environment's import role is `NOSPOIL_IMPORT_ROLE_ARN` and may write only
+that environment's games table. Optionally set the bounded
 `NOSPOIL_ESPN_TIMEOUT_SECONDS` (at most 8) and
 `NOSPOIL_NFLVERSE_TIMEOUT_SECONDS` (at most 60). Never copy staging table or
 role values into the production GitHub environment.
@@ -73,7 +73,25 @@ writes preserve newer observations and confirmed ratings.
 If a source, envelope, AWS, or reconciliation step fails, leave schedules
 disabled, retain the successful season imports, fix the underlying issue, and
 rerun that explicit staging workflow. An empty ID list is intentionally skipped.
-Production import is not selectable here and remains NS-017-B.
+
+### Production inventory import
+
+After staging verification and explicit production approval, dispatch the
+manual-only `import-production.yml` workflow. It is fixed to the protected
+`production` GitHub environment and validates `nospoil-production-games`; it
+cannot select staging or another table. Confirm that the production environment
+variables contain the CloudFormation `ImportRoleArn`, table name, region, and
+`season-schedule-index` before dispatching. The workflow attempts all seven
+seasons (2020–2026), then reconciles each season's captured supported IDs, and
+fails with a complete import/reconciliation summary if any step needs
+attention. Successful earlier writes are retained and safe to rerun.
+
+Keep AWS schedules and the repository reconciliation gate disabled during the
+import and release checks. If any source, envelope, AWS, or reconciliation step
+fails, leave schedules disabled, retain successful imports, correct the cause,
+and rerun the production workflow. Roll back by redeploying the last reviewed
+revision with `NOSPOIL_SCHEDULE_STATE=DISABLED`; do not delete or manually
+rewrite the retained production table.
 
 Use the existing `reconcile-ratings.yml` workflow in `correction` mode for one
 game or a named season, and `due` mode for routine work. A due game is overdue

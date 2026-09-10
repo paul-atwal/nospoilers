@@ -49,14 +49,6 @@
       "AllowedPattern": "^arn:[^ ]+$"
     }
   },
-  "Conditions": {
-    "IsStaging": {
-      "Fn::Equals": [
-        { "Ref": "Environment" },
-        "staging"
-      ]
-    }
-  },
   "Resources": {
     "GamesTable": {
       "Type": "AWS::DynamoDB::Table",
@@ -657,7 +649,6 @@
       }
     },
     "GitHubImportRole": {
-      "Condition": "IsStaging",
       "Type": "AWS::IAM::Role",
       "Properties": {
         "RoleName": { "Fn::Sub": "nospoil-${Environment}-import" },
@@ -669,7 +660,7 @@
             "Action": "sts:AssumeRoleWithWebIdentity",
             "Condition": {
               "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
-              "StringLike": { "token.actions.githubusercontent.com:sub": { "Fn::Sub": "repo:${GitHubRepository}:environment:staging" } }
+              "StringLike": { "token.actions.githubusercontent.com:sub": { "Fn::Sub": "repo:${GitHubRepository}:environment:${Environment}" } }
             }
           }]
         },
@@ -848,8 +839,7 @@
       }
     },
     "ImportRoleArn": {
-      "Condition": "IsStaging",
-      "Description": "Staging-only GitHub OIDC role for inventory import and targeted correction.",
+      "Description": "Environment-bound GitHub OIDC role for inventory import and targeted correction.",
       "Value": { "Fn::GetAtt": ["GitHubImportRole", "Arn"] }
     },
     "ReadFunctionName": {
