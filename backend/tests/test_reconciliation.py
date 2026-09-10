@@ -248,7 +248,7 @@ def test_no_due_games_do_not_download() -> None:
     assert plays.calls == []
 
 
-def test_due_games_load_one_season_and_confirm_using_sorted_verified_plays() -> None:
+def test_due_games_load_one_season_and_confirm_using_source_ordered_plays() -> None:
     first = make_game("one")
     second = make_game("two", rating=provisional_rating())
     repository = FakeRepository((first, second))
@@ -267,7 +267,7 @@ def test_due_games_load_one_season_and_confirm_using_sorted_verified_plays() -> 
     assert schedule.calls == [2026]
     assert plays.calls == [2026]
     assert result.confirmed_updates == 2
-    assert inputs == [RatingInput((0.5, 0.7), True)] * 2
+    assert inputs == [RatingInput((0.7, 0.5), True)] * 2
     assert repository.games[GameId("one")].nflverse_id == "nv-one"
     assert repository.games[GameId("two")].rating.state is RatingState.CONFIRMED
 
@@ -351,7 +351,12 @@ def test_strong_reread_skips_a_newer_confirmed_rating() -> None:
 
 
 def test_correction_skips_same_hash_and_updates_changed_model() -> None:
-    game = make_game("one", rating=confirmed_rating(input_hash=hash_rating_input(RatingInput((0.5, 0.7), True))))
+    game = make_game(
+        "one",
+        rating=confirmed_rating(
+            input_hash=hash_rating_input(RatingInput((0.7, 0.5), True))
+        ),
+    )
     repository = FakeRepository((game,))
     schedule, plays = source_for((game,))
     calculator_calls: list[RatingInput] = []
@@ -366,7 +371,7 @@ def test_correction_skips_same_hash_and_updates_changed_model() -> None:
 
     assert unchanged.unchanged == 1
     assert unchanged.confirmed_updates == 0
-    assert calculator_calls == [RatingInput((0.5, 0.7), True)]
+    assert calculator_calls == [RatingInput((0.7, 0.5), True)]
 
     schedule, plays = source_for((game,))
     changed = service(repository, schedule, plays, model_version="rating-v2").run_correction(
@@ -444,6 +449,40 @@ def test_validation_mismatch_retries_without_replacing_rating() -> None:
     assert result.retries == 1
     assert repository.games[game.game_id].rating == game.rating
     assert repository.games[game.game_id].confirmation_retry.last_error == "nflverse_schedule_score_mismatch"
+
+
+def test_source_sequence_terminal_score_beats_larger_id_correction_row() -> None:
+    game = make_game("one", rating=provisional_rating())
+    repository = FakeRepository((game,))
+    schedule, _ = source_for((game,))
+    plays = FakePlayProvider(
+        NflversePlaySeason(
+            season=2026,
+            plays=(
+                NflversePlay(
+                    NflverseGameId("nv-one"),
+                    99,
+                    4,
+                    0.9,
+                    Score(home=10, away=7),
+                ),
+                NflversePlay(
+                    NflverseGameId("nv-one"),
+                    10,
+                    4,
+                    0.8,
+                    FINAL_SCORE,
+                ),
+            ),
+        )
+    )
+
+    result = service(repository, schedule, plays).run_due(2026, now=NOW)
+
+    assert result.confirmed_updates == 1
+    assert result.failures == 0
+    assert result.retries == 0
+    assert repository.games[game.game_id].rating.state is RatingState.CONFIRMED
 
 
 def test_overdue_uses_initial_eligibility_not_current_retry_due() -> None:
