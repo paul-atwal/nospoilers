@@ -133,7 +133,9 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
   };
 
   const oddsParts = game.odds?.trim().split(/\s+/) ?? [];
+  const favoriteLabel = oddsParts.length > 1 ? oddsParts[0] : '';
   const spreadLabel = oddsParts.length > 1 ? oddsParts.slice(1).join(' ') : oddsParts[0] || '--';
+  const oddsLabel = favoriteLabel ? `${favoriteLabel} ${spreadLabel}` : spreadLabel;
 
   return (
     <article className="bg-neutral-800/40 rounded-xl border border-white/5 overflow-hidden hover:border-white/10 transition-colors shadow-sm">
@@ -174,30 +176,36 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
           </div>
         </div>
         <div className="flex flex-col items-center justify-between min-w-[68px] border-l border-white/5 pl-3 md:pl-4 py-1">
-          <div
-            className={`relative w-12 h-12 md:w-14 md:h-14 rounded-full flex flex-col items-center justify-center border-[3px] ${
-              isScheduled
-                ? 'text-neutral-400 border-neutral-700 bg-neutral-800/50'
-                : colorClasses
-            }`}
-          >
-            {isScheduled ? (
-              <>
-                <span className="text-[10px] font-bold text-center">{spreadLabel}</span>
-              </>
-            ) : (
-              <>
-                {ratingMessage && (
-                  <span className="text-[9px] font-bold text-center leading-tight">
-                    {ratingMessage}
-                  </span>
-                )}
-                {isUnratedPreseason && <span className="text-[10px] font-bold text-center">--</span>}
-                {score !== null && (
-                  <span className="font-black text-lg leading-none">{score.toFixed(1)}</span>
-                )}
-              </>
-            )}
+          <div className="flex-1 w-full flex items-center justify-center relative">
+            <div
+              aria-label={`Spread ${oddsLabel}`}
+              className={`relative w-12 h-12 md:w-14 md:h-14 rounded-full flex flex-col items-center justify-center border-[3px] ${
+                isScheduled
+                  ? 'text-neutral-400 border-neutral-700 bg-neutral-800/50'
+                  : colorClasses
+              }`}
+            >
+              {isScheduled ? (
+                <>
+                  {favoriteLabel && (
+                    <span className="text-[9px] font-bold text-center leading-tight">{favoriteLabel}</span>
+                  )}
+                  <span className="text-[10px] font-bold text-center">{spreadLabel}</span>
+                </>
+              ) : (
+                <>
+                  {ratingMessage && (
+                    <span className="text-[9px] font-bold text-center leading-tight">
+                      {ratingMessage}
+                    </span>
+                  )}
+                  {isUnratedPreseason && <span className="text-[10px] font-bold text-center">--</span>}
+                  {score !== null && (
+                    <span className="font-black text-lg leading-none">{score.toFixed(1)}</span>
+                  )}
+                </>
+              )}
+            </div>
           </div>
           {canReveal && (
             <button

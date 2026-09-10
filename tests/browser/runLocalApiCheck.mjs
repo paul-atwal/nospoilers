@@ -17,14 +17,15 @@ page.on('console', (message) => { if (message.type() === 'error') consoleErrors.
 page.on('request', (request) => requests.push(request.url()));
 
 await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-await page.getByText('Seattle Seahawks').first().waitFor();
+await page.getByText('Seahawks', { exact: true }).first().waitFor();
 assert(await page.locator('article').count() === 2, 'seeded week did not render both games');
-assert(await page.getByText('Confirmed rating').isVisible(), 'confirmed rating from DynamoDB was not rendered');
-assert(await page.getByText('SEA -3.5').isVisible(), 'scheduled odds from DynamoDB were not rendered');
-assert(await page.getByLabel('Seattle Seahawks score 24').count() === 0, 'final score leaked before reveal');
+assert(await page.getByText('8.4', { exact: true }).isVisible(), 'confirmed rating from DynamoDB was not rendered');
+assert(await page.getByText('Confirmed rating', { exact: true }).count() === 0, 'confirmed rating caption leaked into the card');
+assert(await page.getByLabel('Spread SEA -3.5').isVisible(), 'scheduled odds from DynamoDB were not rendered');
+assert(await page.getByLabel('Seahawks score 24').count() === 0, 'final score leaked before reveal');
 assert(await page.locator('img[src^="/team-logos/"]').count() === 4, 'local team logos were not used');
-await page.getByRole('button', { name: /Reveal score for New England Patriots at Seattle Seahawks/ }).click();
-await page.getByLabel('Seattle Seahawks score 24').waitFor();
+await page.getByRole('button', { name: /Reveal score for Patriots at Seahawks/ }).click();
+await page.getByLabel('Seahawks score 24').waitFor();
 assert(await page.getByText('1-0').isVisible(), 'postgame record did not replace pregame record after reveal');
 await page.screenshot({ path: new URL('actual-local-api-week.png', evidenceDir).pathname, fullPage: false });
 
@@ -42,7 +43,7 @@ await page.getByRole('button', { name: 'Show Best of Season' }).click();
 await page.getByText('Season Leaders').waitFor();
 await page.waitForFunction(() => document.querySelectorAll('article').length === 1);
 assert(await page.locator('article').count() === 1, 'actual season view did not filter to its eligible final game');
-assert(await page.getByText('Confirmed rating').isVisible(), 'actual season rating missing');
+assert(await page.getByText('8.4', { exact: true }).isVisible(), 'actual season rating missing');
 await page.screenshot({ path: new URL('actual-local-api-season.png', evidenceDir).pathname, fullPage: false });
 
 assert(pageErrors.length === 0, `page errors: ${pageErrors.join(' | ')}`);

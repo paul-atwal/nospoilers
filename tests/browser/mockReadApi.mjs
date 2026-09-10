@@ -67,8 +67,8 @@ const seasonGames = () => {
   const eligible = Array.from({ length: 12 }, (_, index) => game({
     id: `ranked-${index + 1}`,
     seasonWeek: index === 11 ? week(1, 'postseason') : week(Math.min(index + 1, 18)),
-    home: team('26', `Ranked Home ${index + 1}`, 'SEA', record(8, 2), record(9, 2)),
-    away: team('17', `Ranked Away ${index + 1}`, 'NE', record(7, 3), record(7, 4)),
+    home: team(`ranked-home-${index + 1}`, `Ranked Home ${index + 1}`, 'SEA', record(8, 2), record(9, 2)),
+    away: team(`ranked-away-${index + 1}`, `Ranked Away ${index + 1}`, 'NE', record(7, 3), record(7, 4)),
     state: 'final', detail: 'Final', score: { home: 24, away: 17 }, odds: null,
     gameRating: rating(index % 2 ? 'provisional' : 'confirmed', 9.9 - index * 0.2),
   }));
@@ -110,7 +110,7 @@ const server = http.createServer((request, response) => {
   const step = count(key);
 
   if (scenario === 'race') {
-    const body = envelope([game({ id: `race-${selectedWeek.week}`, seasonWeek: selectedWeek, home: team('26', selectedWeek.week === 1 ? 'Slow Week One' : 'Fast Week Two', 'SEA') })], null, selectedWeek);
+    const body = envelope([game({ id: `race-${selectedWeek.week}`, seasonWeek: selectedWeek, home: team(`race-home-${selectedWeek.week}`, selectedWeek.week === 1 ? 'Slow Week One' : 'Fast Week Two', 'SEA') })], null, selectedWeek);
     return setTimeout(() => reply(request, response, 200, body, { ETag: `"race-${selectedWeek.week}"` }), selectedWeek.week === 1 ? 1500 : 0);
   }
   if (scenario === 'missing') {

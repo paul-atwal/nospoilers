@@ -164,7 +164,9 @@ describe('GameCard week context', () => {
     );
 
     expect(screen.queryByText('Odds')).toBeNull();
+    expect(screen.getByText('SEA')).not.toBeNull();
     expect(screen.getByText('-3.5')).not.toBeNull();
+    expect(screen.getByLabelText('Spread SEA -3.5')).not.toBeNull();
   });
 
   it('uses the simple neutral state for an intentionally unrated preseason game', () => {
