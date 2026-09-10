@@ -40,6 +40,8 @@ def test_production_import_is_manual_fixed_and_sequential() -> None:
     assert "environment: production" in workflow
     assert "nospoil-production-games" in workflow
     assert "nospoil-staging-games" not in workflow
+    assert '[[ "$NOSPOIL_SCHEDULE_INDEX" == "season-schedule-index" ]]' in workflow
+    assert '[[ "$NOSPOIL_IMPORT_ROLE_ARN" == "arn:aws:iam::945461162255:role/nospoil-production-import" ]]' in workflow
     assert "contents: read" in workflow
     assert "id-token: write" in workflow
     assert 'seasons=(2020 2021 2022 2023 2024 2025 2026)' in workflow

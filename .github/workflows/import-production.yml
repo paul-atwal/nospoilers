@@ -50,8 +50,9 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$NOSPOIL_GAMES_TABLE" == "nospoil-production-games" ]] || { echo "production table is required" >&2; exit 2; }
+          [[ "$NOSPOIL_SCHEDULE_INDEX" == "season-schedule-index" ]] || { echo "production schedule index is required" >&2; exit 2; }
           [[ -n "$NOSPOIL_AWS_REGION" ]] || { echo "AWS region is required" >&2; exit 2; }
-          [[ -n "$NOSPOIL_IMPORT_ROLE_ARN" ]] || { echo "production import role is required" >&2; exit 2; }
+          [[ "$NOSPOIL_IMPORT_ROLE_ARN" == "arn:aws:iam::945461162255:role/nospoil-production-import" ]] || { echo "production import role is required" >&2; exit 2; }
 
       - name: Configure short-lived production credentials
         uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c

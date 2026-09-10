@@ -149,27 +149,62 @@ def test_unknown_season_fails_before_aws_or_source(monkeypatch, capsys) -> None:
     assert payload["error"] == "UnknownSeasonError"
 
 
-def test_production_table_fails_before_aws_or_source(monkeypatch, capsys) -> None:
+def test_production_table_is_accepted(monkeypatch, capsys) -> None:
     monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "nospoil-production-games")
-    called: list[str] = []
+    repository = object()
+    captured: dict[str, object] = {}
 
-    def forbidden(*args, **kwargs):
-        called.append("called")
-        raise AssertionError("production import must not construct AWS/source")
+    class FakeService:
+        def import_weeks(self, season, weeks, *, now, active_season):
+            captured["season"] = season
+            captured["repository"] = repository
+            return SimpleNamespace(
+                season=season,
+                requested_weeks=(),
+                verified_weeks=(),
+                empty_weeks=(),
+                source_calls=0,
+                scoreboard_requests=0,
+                games_created=0,
+                games_updated=0,
+                persistence_writes=0,
+                stale_writes=0,
+                rejected_transitions=0,
+                supported_final_game_ids=(),
+            )
 
     assert (
         main(
             ["--season", "2020"],
-            boto_resource=forbidden,
-            scoreboard_factory=forbidden,
+            boto_resource=lambda *args, **kwargs: SimpleNamespace(
+                Table=lambda name: object()
+            ),
+            repository_factory=lambda *args, **kwargs: repository,
+            scoreboard_factory=lambda *args, **kwargs: object(),
+            service_factory=lambda *args, **kwargs: FakeService(),
         )
-        == 1
+        == 0
     )
+    assert captured == {"season": 2020, "repository": repository}
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+
+
+def test_arbitrary_table_fails_before_aws_or_source(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("NOSPOIL_GAMES_TABLE", "nospoil-other-games")
+    called: list[str] = []
+
+    def forbidden(*args, **kwargs):
+        called.append("called")
+        raise AssertionError("arbitrary table must not construct AWS/source")
+
+    assert main(["--season", "2020"], boto_resource=forbidden, scoreboard_factory=forbidden) == 1
     assert called == []
     payload = json.loads(capsys.readouterr().out)
     assert payload["ok"] is False
     assert payload["error"] == "RuntimeError"
     assert "nospoil-staging-games" in payload["message"]
+    assert "nospoil-production-games" in payload["message"]
 
 
 def test_historical_import_requests_every_exact_catalogue_week_with_bounded_workers() -> (
