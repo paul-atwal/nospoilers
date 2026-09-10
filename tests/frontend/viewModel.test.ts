@@ -41,6 +41,19 @@ describe('read API compatibility view model', () => {
     expect(toViewGame({ ...game, rating: { ...game.rating, state: 'provisional', score: 7.2 } }).rating.score).toBe(7.2);
   });
 
+  it('maps API team display names to nicknames without city prefixes', () => {
+    const game = toViewGame({
+      ...makeApiGame('final', { home: 3, away: 0 }),
+      home: { ...makeApiGame('final', { home: 0, away: 0 }).home, id: '26', displayName: 'Seattle Seahawks', abbreviation: 'SEA' },
+      away: { ...makeApiGame('final', { home: 0, away: 0 }).away, id: '17', displayName: 'New England Patriots', abbreviation: 'NE' },
+    });
+
+    expect(game.home?.name).toBe('Seahawks');
+    expect(game.away?.name).toBe('Patriots');
+    expect(game.homeTeam).toBe('Seahawks');
+    expect(game.awayTeam).toBe('Patriots');
+  });
+
   it('formats kickoff in the requested zone, including DST and an explicit zone label', () => {
     const kickoff = formatKickoff('2026-03-08T10:30:00Z', 'America/Los_Angeles');
     expect(kickoff.time).toMatch(/3:30/);

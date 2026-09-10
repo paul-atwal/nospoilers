@@ -1,5 +1,5 @@
 import type { ApiGame, ApiRecord, ApiTeam, Game, GameRecordSnapshots, RatingPresentation, TeamView, KickoffView } from '../types';
-import { getTeamFallbackLabel, getTeamLogoUrl } from './teamAssets';
+import { getTeamDisplayName, getTeamFallbackLabel, getTeamLogoUrl } from './teamAssets';
 
 const STATUS_LABELS: Record<ApiGame['status']['state'], string> = {
   scheduled: 'Scheduled', in_progress: 'In Progress', final: 'Final', delayed: 'Delayed', postponed: 'Postponed', cancelled: 'Cancelled',
@@ -27,7 +27,7 @@ const toSnapshots = (team: ApiTeam): GameRecordSnapshots | null => {
 
 const toTeam = (team: ApiTeam): TeamView => ({
   id: team.id,
-  name: team.displayName,
+  name: getTeamDisplayName(team),
   abbreviation: getTeamFallbackLabel(team),
   logoUrl: getTeamLogoUrl(team),
   records: toSnapshots(team),
@@ -36,7 +36,12 @@ const toTeam = (team: ApiTeam): TeamView => ({
 export const toRatingPresentation = (game: ApiGame): RatingPresentation => {
   const score = game.rating.state === 'confirmed' || game.rating.state === 'provisional' ? game.rating.score : null;
   const labels: Record<ApiGame['rating']['state'], string> = { pending: 'Rating pending', provisional: 'Provisional rating', confirmed: 'Confirmed rating', unavailable: 'Rating unavailable' };
-  return { state: game.rating.state, label: labels[game.rating.state], score };
+  return {
+    state: game.rating.state,
+    label: labels[game.rating.state],
+    score,
+    confirmationSupported: game.rating.confirmationSupported,
+  };
 };
 
 export const toViewGame = (apiGame: ApiGame, timeZone?: string): Game => {
