@@ -395,6 +395,45 @@ def test_broad_correction_excludes_unsupported_confirmed_games() -> None:
     assert repository.games[unsupported.game_id] == unsupported
 
 
+def test_targeted_correction_revalidates_multiple_rating_states_in_one_download() -> (
+    None
+):
+    pending = make_game("pending", final_at=NOW - timedelta(hours=1))
+    confirmed = make_game("confirmed", rating=confirmed_rating())
+    repository = FakeRepository((pending, confirmed))
+    schedule, plays = source_for((pending, confirmed))
+
+    result = service(repository, schedule, plays).run_correction(
+        2026,
+        now=NOW,
+        game_ids=(pending.game_id, confirmed.game_id),
+    )
+
+    assert result.selected == 2
+    assert result.downloads == 1
+    assert result.confirmed_updates == 2
+    assert schedule.calls == [2026]
+    assert repository.games[pending.game_id].rating.state is RatingState.CONFIRMED
+    assert repository.games[confirmed.game_id].rating.state is RatingState.CONFIRMED
+
+
+def test_multi_target_correction_fails_before_download_when_one_id_is_missing() -> None:
+    current = make_game("present")
+    repository = FakeRepository((current,))
+    schedule, plays = source_for((current,))
+
+    result = service(repository, schedule, plays).run_correction(
+        2026,
+        now=NOW,
+        game_ids=(current.game_id, GameId("missing")),
+    )
+
+    assert result.failures == 1
+    assert result.manual_correction_failure is True
+    assert result.downloads == 0
+    assert schedule.calls == []
+
+
 def test_validation_mismatch_retries_without_replacing_rating() -> None:
     game = make_game("one", rating=provisional_rating())
     repository = FakeRepository((game,))

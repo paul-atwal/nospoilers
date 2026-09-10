@@ -1,0 +1,896 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "NoSpoil NFL isolated environment.",
+  "Parameters": {
+    "Environment": {
+      "Type": "String",
+      "AllowedValues": [
+        "staging",
+        "production"
+      ]
+    },
+    "ActiveSeason": {
+      "Type": "String",
+      "AllowedPattern": "^[1-9][0-9]{3}$"
+    },
+    "ScheduleState": {
+      "Type": "String",
+      "Default": "DISABLED",
+      "AllowedValues": [
+        "ENABLED",
+        "DISABLED"
+      ]
+    },
+    "ArtifactBucket": {
+      "Type": "String"
+    },
+    "ReadArtifactKey": {
+      "Type": "String"
+    },
+    "SyncArtifactKey": {
+      "Type": "String"
+    },
+    "FrontendOrigin": {
+      "Type": "String",
+      "AllowedPattern": "^https?://[^\\s]+$"
+    },
+    "GitHubRepository": {
+      "Type": "String",
+      "Default": "paul-atwal/nospoilers",
+      "AllowedPattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "CodeSha256": {
+      "Type": "String",
+      "Description": "Base64-encoded SHA-256 of the sync deployment archive.",
+      "AllowedPattern": "^[A-Za-z0-9+/]{43}=$"
+    },
+    "OperationsTopicArn": {
+      "Type": "String",
+      "AllowedPattern": "^arn:[^ ]+$"
+    }
+  },
+  "Conditions": {
+    "IsStaging": {
+      "Fn::Equals": [
+        { "Ref": "Environment" },
+        "staging"
+      ]
+    }
+  },
+  "Resources": {
+    "GamesTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "RetainExceptOnCreate",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "TableName": {
+          "Fn::Sub": "nospoil-${Environment}-games"
+        },
+        "BillingMode": "PAY_PER_REQUEST",
+        "SSESpecification": {
+          "SSEEnabled": true
+        },
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "game_id",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "season_key",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "schedule_key",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "game_id",
+            "KeyType": "HASH"
+          }
+        ],
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "season-schedule-index",
+            "KeySchema": [
+              {
+                "AttributeName": "season_key",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "schedule_key",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ]
+      }
+    },
+    "ReadLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/nospoil-${Environment}-read"
+        },
+        "RetentionInDays": 14
+      }
+    },
+    "SyncLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/nospoil-${Environment}-sync"
+        },
+        "RetentionInDays": 14
+      }
+    },
+    "ReadRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::Sub": "nospoil-${Environment}-read"
+        },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "read-table",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:Query"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::GetAtt": [
+                        "GamesTable",
+                        "Arn"
+                      ]
+                    },
+                    {
+                      "Fn::Sub": "${GamesTable.Arn}/index/season-schedule-index"
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "ReadLogGroup",
+                      "Arn"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "SyncRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::Sub": "nospoil-${Environment}-sync"
+        },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "sync-table",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:GetItem",
+                    "dynamodb:PutItem",
+                    "dynamodb:UpdateItem",
+                    "dynamodb:Query"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::GetAtt": [
+                        "GamesTable",
+                        "Arn"
+                      ]
+                    },
+                    {
+                      "Fn::Sub": "${GamesTable.Arn}/index/season-schedule-index"
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "SyncLogGroup",
+                      "Arn"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ReadFunction": {
+      "Type": "AWS::Lambda::Function",
+      "DependsOn": [
+        "ReadLogGroup"
+      ],
+      "Properties": {
+        "FunctionName": {
+          "Fn::Sub": "nospoil-${Environment}-read"
+        },
+        "Runtime": "python3.11",
+        "Architectures": [
+          "x86_64"
+        ],
+        "Handler": "backend.nospoil_nfl.api.handler.lambda_handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "ReadRole",
+            "Arn"
+          ]
+        },
+        "Timeout": 10,
+        "ReservedConcurrentExecutions": 4,
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ArtifactBucket"
+          },
+          "S3Key": {
+            "Ref": "ReadArtifactKey"
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "NOSPOIL_GAMES_TABLE": {
+              "Ref": "GamesTable"
+            },
+            "NOSPOIL_SCHEDULE_INDEX": "season-schedule-index",
+            "NOSPOIL_FRONTEND_ORIGINS": {
+              "Ref": "FrontendOrigin"
+            }
+          }
+        },
+        "MemorySize": 512
+      }
+    },
+    "ReadUrl": {
+      "Type": "AWS::Lambda::Url",
+      "Properties": {
+        "AuthType": "NONE",
+        "TargetFunctionArn": {
+          "Ref": "ReadFunction"
+        },
+        "Cors": {
+          "AllowOrigins": [
+            {
+              "Ref": "FrontendOrigin"
+            }
+          ],
+          "AllowMethods": [
+            "GET",
+            "HEAD"
+          ],
+          "AllowHeaders": [
+            "If-None-Match"
+          ],
+          "ExposeHeaders": [
+            "ETag",
+            "Cache-Control",
+            "Retry-After"
+          ]
+        }
+      }
+    },
+    "ReadUrlPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "DependsOn": [
+        "ReadUrl"
+      ],
+      "Properties": {
+        "Action": "lambda:InvokeFunctionUrl",
+        "FunctionName": {
+          "Ref": "ReadFunction"
+        },
+        "Principal": "*",
+        "FunctionUrlAuthType": "NONE"
+      }
+    },
+    "SyncFunction": {
+      "Type": "AWS::Lambda::Function",
+      "DependsOn": [
+        "SyncLogGroup"
+      ],
+      "Properties": {
+        "FunctionName": {
+          "Fn::Sub": "nospoil-${Environment}-sync"
+        },
+        "Runtime": "python3.11",
+        "Architectures": [
+          "x86_64"
+        ],
+        "Handler": "backend.nospoil_nfl.sync.handler.lambda_handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "SyncRole",
+            "Arn"
+          ]
+        },
+        "Timeout": 45,
+        "ReservedConcurrentExecutions": 1,
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ArtifactBucket"
+          },
+          "S3Key": {
+            "Ref": "SyncArtifactKey"
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "NOSPOIL_GAMES_TABLE": {
+              "Ref": "GamesTable"
+            },
+            "NOSPOIL_SCHEDULE_INDEX": "season-schedule-index",
+            "NOSPOIL_ESPN_TIMEOUT_SECONDS": "8",
+            "NOSPOIL_ESPN_SUMMARY_TIMEOUT_SECONDS": "5"
+          }
+        },
+        "MemorySize": 512
+      }
+    },
+    "SyncVersion": {
+      "Type": "AWS::Lambda::Version",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "SyncFunction"
+        },
+        "CodeSha256": {
+          "Ref": "CodeSha256"
+        }
+      },
+      "UpdateReplacePolicy": "Retain"
+    },
+    "LiveAlias": {
+      "Type": "AWS::Lambda::Alias",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "SyncFunction"
+        },
+        "FunctionVersion": {
+          "Fn::GetAtt": [
+            "SyncVersion",
+            "Version"
+          ]
+        },
+        "Name": "live"
+      }
+    },
+    "ScheduleAlias": {
+      "Type": "AWS::Lambda::Alias",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "SyncFunction"
+        },
+        "FunctionVersion": {
+          "Fn::GetAtt": [
+            "SyncVersion",
+            "Version"
+          ]
+        },
+        "Name": "schedule"
+      }
+    },
+    "LiveInvokeConfig": {
+      "Type": "AWS::Lambda::EventInvokeConfig",
+      "DependsOn": [
+        "LiveAlias"
+      ],
+      "Properties": {
+        "FunctionName": {
+          "Ref": "SyncFunction"
+        },
+        "MaximumEventAgeInSeconds": 60,
+        "MaximumRetryAttempts": 0,
+        "Qualifier": "live"
+      }
+    },
+    "ScheduleInvokeConfig": {
+      "Type": "AWS::Lambda::EventInvokeConfig",
+      "DependsOn": [
+        "ScheduleAlias"
+      ],
+      "Properties": {
+        "FunctionName": {
+          "Ref": "SyncFunction"
+        },
+        "MaximumEventAgeInSeconds": 900,
+        "MaximumRetryAttempts": 2,
+        "Qualifier": "schedule"
+      }
+    },
+    "SchedulerRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::Sub": "nospoil-${Environment}-scheduler"
+        },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "scheduler.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "invoke-sync-aliases",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "lambda:InvokeFunction",
+                  "Resource": [
+                    {
+                      "Ref": "LiveAlias"
+                    },
+                    {
+                      "Ref": "ScheduleAlias"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "LiveSchedule": {
+      "Type": "AWS::Scheduler::Schedule",
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "nospoil-${Environment}-live"
+        },
+        "FlexibleTimeWindow": {
+          "Mode": "OFF"
+        },
+        "ScheduleExpression": "rate(1 minute)",
+        "Target": {
+          "Arn": {
+            "Ref": "LiveAlias"
+          },
+          "RoleArn": {
+            "Fn::GetAtt": [
+              "SchedulerRole",
+              "Arn"
+            ]
+          },
+          "Input": {
+            "Fn::Sub": "{\"mode\":\"live_tick\",\"scheduledTime\":\"<aws.scheduler.scheduled-time>\",\"season\":${ActiveSeason}}"
+          },
+          "RetryPolicy": {
+            "MaximumEventAgeInSeconds": 60,
+            "MaximumRetryAttempts": 0
+          }
+        },
+        "State": {
+          "Ref": "ScheduleState"
+        }
+      }
+    },
+    "DailySchedule": {
+      "Type": "AWS::Scheduler::Schedule",
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "nospoil-${Environment}-daily"
+        },
+        "FlexibleTimeWindow": {
+          "Mode": "OFF"
+        },
+        "ScheduleExpression": "cron(15 10 * * ? *)",
+        "Target": {
+          "Arn": {
+            "Ref": "ScheduleAlias"
+          },
+          "RoleArn": {
+            "Fn::GetAtt": [
+              "SchedulerRole",
+              "Arn"
+            ]
+          },
+          "Input": "{\"mode\":\"daily_near_term\",\"scheduledTime\":\"<aws.scheduler.scheduled-time>\"}",
+          "RetryPolicy": {
+            "MaximumEventAgeInSeconds": 900,
+            "MaximumRetryAttempts": 2
+          }
+        },
+        "State": {
+          "Ref": "ScheduleState"
+        }
+      }
+    },
+    "WeeklySchedule": {
+      "Type": "AWS::Scheduler::Schedule",
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "nospoil-${Environment}-weekly"
+        },
+        "FlexibleTimeWindow": {
+          "Mode": "OFF"
+        },
+        "ScheduleExpression": "cron(45 10 ? * TUE *)",
+        "Target": {
+          "Arn": {
+            "Ref": "ScheduleAlias"
+          },
+          "RoleArn": {
+            "Fn::GetAtt": [
+              "SchedulerRole",
+              "Arn"
+            ]
+          },
+          "Input": "{\"mode\":\"weekly_remaining\",\"scheduledTime\":\"<aws.scheduler.scheduled-time>\"}",
+          "RetryPolicy": {
+            "MaximumEventAgeInSeconds": 900,
+            "MaximumRetryAttempts": 2
+          }
+        },
+        "State": {
+          "Ref": "ScheduleState"
+        }
+      }
+    },
+    "GitHubReconcileRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::Sub": "nospoil-${Environment}-reconcile"
+        },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+                }
+              },
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+                },
+                "StringLike": {
+                  "token.actions.githubusercontent.com:sub": {
+                    "Fn::Sub": "repo:${GitHubRepository}:environment:${Environment}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "reconcile-table",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:GetItem",
+                    "dynamodb:UpdateItem"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "GamesTable",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": "dynamodb:Query",
+                  "Resource": {
+                    "Fn::Sub": "${GamesTable.Arn}/index/season-schedule-index"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "GitHubImportRole": {
+      "Condition": "IsStaging",
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": { "Fn::Sub": "nospoil-${Environment}-import" },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": { "Federated": { "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com" } },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+              "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
+              "StringLike": { "token.actions.githubusercontent.com:sub": { "Fn::Sub": "repo:${GitHubRepository}:environment:staging" } }
+            }
+          }]
+        },
+        "Policies": [{
+          "PolicyName": "import-table",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              { "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"], "Resource": { "Fn::GetAtt": ["GamesTable", "Arn"] } },
+              { "Effect": "Allow", "Action": "dynamodb:Query", "Resource": { "Fn::Sub": "${GamesTable.Arn}/index/season-schedule-index" } }
+            ]
+          }
+        }]
+      }
+    },
+    "ReadErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "nospoil-${Environment}-read-errors"
+        },
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Errors",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "ReadFunction"
+            }
+          }
+        ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "OperationsTopicArn"
+          }
+        ]
+      }
+    },
+    "SyncErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "nospoil-${Environment}-sync-errors"
+        },
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Errors",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "SyncFunction"
+            }
+          }
+        ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "OperationsTopicArn"
+          }
+        ]
+      }
+    },
+    "ReadUrlInvokePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "DependsOn": [
+        "ReadUrl"
+      ],
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Ref": "ReadFunction"
+        },
+        "Principal": "*",
+        "InvokedViaFunctionUrl": true
+      }
+    },
+    "ReadThrottlesAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "nospoil-${Environment}-read-throttles"
+        },
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Throttles",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "ReadFunction"
+            }
+          }
+        ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "OperationsTopicArn"
+          }
+        ]
+      }
+    },
+    "SyncThrottlesAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "nospoil-${Environment}-sync-throttles"
+        },
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Throttles",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "SyncFunction"
+            }
+          }
+        ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "OperationsTopicArn"
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "ReadUrl": {
+      "Value": {
+        "Fn::GetAtt": [
+          "ReadUrl",
+          "FunctionUrl"
+        ]
+      }
+    },
+    "GamesTableName": {
+      "Value": {
+        "Ref": "GamesTable"
+      }
+    },
+    "ReconcileRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "GitHubReconcileRole",
+          "Arn"
+        ]
+      }
+    },
+    "OperationsRoleArn": {
+      "Description": "Environment-bound GitHub OIDC role for repair and reconciliation.",
+      "Value": {
+        "Fn::GetAtt": [
+          "GitHubReconcileRole",
+          "Arn"
+        ]
+      }
+    },
+    "ImportRoleArn": {
+      "Condition": "IsStaging",
+      "Description": "Staging-only GitHub OIDC role for inventory import and targeted correction.",
+      "Value": { "Fn::GetAtt": ["GitHubImportRole", "Arn"] }
+    },
+    "ReadFunctionName": {
+      "Value": {
+        "Ref": "ReadFunction"
+      }
+    },
+    "SyncFunctionName": {
+      "Value": {
+        "Ref": "SyncFunction"
+      }
+    },
+    "OperationsTopicArn": {
+      "Value": {
+        "Ref": "OperationsTopicArn"
+      }
+    },
+    "LiveAliasArn": {
+      "Value": {
+        "Ref": "LiveAlias"
+      }
+    },
+    "ScheduleAliasArn": {
+      "Value": {
+        "Ref": "ScheduleAlias"
+      }
+    },
+    "LiveScheduleName": {
+      "Value": {
+        "Ref": "LiveSchedule"
+      }
+    },
+    "DailyScheduleName": {
+      "Value": {
+        "Ref": "DailySchedule"
+      }
+    },
+    "WeeklyScheduleName": {
+      "Value": {
+        "Ref": "WeeklySchedule"
+      }
+    }
+  }
+}

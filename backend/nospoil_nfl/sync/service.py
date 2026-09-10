@@ -36,6 +36,7 @@ from ..providers import (
     ScheduleTeam,
     ScoreboardBatch,
 )
+from ..rating.confirmation import is_confirmation_supported
 from .models import SyncEvent, SyncMode, SyncResult
 from .records import TeamResult, TeamSide, prepare_team_records, results_by_team
 
@@ -62,6 +63,30 @@ class _Counts:
     games_updated: int = 0
     stale_writes: int = 0
     rejected_transitions: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class ImportResult:
+    """Bounded inventory import summary for one catalogued season."""
+
+    season: int
+    requested_weeks: tuple[SeasonWeek, ...]
+    verified_weeks: tuple[SeasonWeek, ...]
+    empty_weeks: tuple[SeasonWeek, ...]
+    scoreboard_requests: int
+    games_created: int
+    games_updated: int
+    stale_writes: int
+    rejected_transitions: int
+    supported_final_game_ids: tuple[GameId, ...]
+
+    @property
+    def source_calls(self) -> int:
+        return self.scoreboard_requests
+
+    @property
+    def persistence_writes(self) -> int:
+        return self.games_created + self.games_updated
 
 
 class ScheduleSyncService:
@@ -130,6 +155,114 @@ class ScheduleSyncService:
             provisional_rating_requests=len(result.provisional_rating_game_ids),
         )
         return result
+
+    def import_weeks(
+        self,
+        season: int,
+        weeks: tuple[SeasonWeek, ...],
+        *,
+        now: datetime,
+        active_season: int,
+    ) -> ImportResult:
+        """Import exactly the supplied weeks, without live discovery for history.
+
+        The active season gets one discovery response solely to protect future
+        record snapshots. Every requested week is still fetched explicitly.
+        """
+        if isinstance(season, bool) or not isinstance(season, int) or season < 1:
+            raise ValueError("season must be a positive integer")
+        if (
+            isinstance(active_season, bool)
+            or not isinstance(active_season, int)
+            or active_season < 1
+        ):
+            raise ValueError("active_season must be a positive integer")
+        if not isinstance(now, datetime) or now.utcoffset() != timedelta(0):
+            raise ValueError("now must be a timezone-aware UTC datetime")
+        if not isinstance(weeks, tuple) or not weeks:
+            raise ValueError("import weeks must be a non-empty tuple")
+        if len(weeks) > MAX_KNOWN_WEEKS:
+            raise ValueError("import weeks exceed the bounded week limit")
+        if any(not isinstance(week, SeasonWeek) for week in weeks):
+            raise ValueError("import weeks must contain SeasonWeek values")
+        if any(week.season != season for week in weeks):
+            raise ValueError("import weeks must be a non-empty single-season tuple")
+        if len(set(weeks)) != len(weeks):
+            raise ValueError("import weeks must be unique")
+        requested = tuple(weeks)
+        counts = _Counts()
+        exclusions: dict[str, tuple[TeamResult, ...]] = {}
+        future_weeks: set[SeasonWeek] = set()
+        if season == active_season:
+            discovery = self._fetch(None, counts, purpose="active_import_discovery")
+            if discovery.season_week.season != season:
+                raise ValueError("active discovery season does not match import season")
+            if (
+                not discovery.known_weeks
+                or len(discovery.known_weeks) > MAX_KNOWN_WEEKS
+            ):
+                raise ValueError("active discovery calendar is missing or unbounded")
+            try:
+                current_index = discovery.known_weeks.index(discovery.season_week)
+            except ValueError as exc:
+                raise ValueError("active discovery current week is not catalogued") from exc
+            future_weeks = set(discovery.known_weeks[current_index + 1 :])
+            exclusions = _future_week_exclusions(discovery)
+
+        batches = self._fetch_import_batches(requested, counts)
+        handoffs: list[GameId] = []
+        supported: set[GameId] = set()
+        for batch in batches:
+            week_exclusions = exclusions if batch.season_week in future_weeks else {}
+            for observation in batch.games:
+                self._sync_schedule_game(
+                    batch.season_week,
+                    batch.observed_at,
+                    observation,
+                    week_exclusions,
+                    now,
+                    counts,
+                    handoffs,
+                )
+                durable = self._repository.get(observation.game_id)
+                if (
+                    durable is not None
+                    and durable.season_week == batch.season_week
+                    and durable.status.state is GameState.FINAL
+                    and is_confirmation_supported(batch.season_week)
+                ):
+                    supported.add(durable.game_id)
+        empty = tuple(batch.season_week for batch in batches if not batch.games)
+        return ImportResult(
+            season=season,
+            requested_weeks=requested,
+            verified_weeks=tuple(batch.season_week for batch in batches),
+            empty_weeks=empty,
+            scoreboard_requests=counts.scoreboard_requests,
+            games_created=counts.games_created,
+            games_updated=counts.games_updated,
+            stale_writes=counts.stale_writes,
+            rejected_transitions=counts.rejected_transitions,
+            supported_final_game_ids=tuple(sorted(supported, key=str)),
+        )
+
+    def _fetch_import_batches(
+        self, weeks: tuple[SeasonWeek, ...], counts: _Counts
+    ) -> tuple[ScoreboardBatch, ...]:
+        """Fetch and validate every exact envelope before any persistence."""
+        for week in weeks:
+            self._log_source_call(week, purpose="inventory_import")
+        counts.scoreboard_requests += len(weeks)
+        with ThreadPoolExecutor(
+            max_workers=min(SCHEDULE_FETCH_WORKERS, len(weeks))
+        ) as executor:
+            fetched = tuple(executor.map(self._scoreboard.fetch_scoreboard, weeks))
+        for requested, batch in zip(weeks, fetched):
+            if not isinstance(batch, ScoreboardBatch) or batch.season_week != requested:
+                raise ValueError(
+                    "ESPN scoreboard envelope does not match requested inventory week"
+                )
+        return fetched
 
     def _run_schedule(
         self,
@@ -939,4 +1072,5 @@ __all__ = [
     "PREGAME_CHECK_WINDOW",
     "SCHEDULE_FETCH_WORKERS",
     "ScheduleSyncService",
+    "ImportResult",
 ]

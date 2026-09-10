@@ -1,6 +1,12 @@
 """Public schedule and live synchronization API."""
 
 from .models import SyncEvent, SyncMode, SyncResult
-from .service import ScheduleSyncService
+from .service import ImportResult, ScheduleSyncService
 
-__all__ = ["ScheduleSyncService", "SyncEvent", "SyncMode", "SyncResult"]
+__all__ = [
+    "ImportResult",
+    "ScheduleSyncService",
+    "SyncEvent",
+    "SyncMode",
+    "SyncResult",
+]
