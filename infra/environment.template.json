@@ -292,7 +292,7 @@
             }
           }
         },
-        "MemorySize": 256
+        "MemorySize": 512
       }
     },
     "ReadUrl": {

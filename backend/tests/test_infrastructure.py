@@ -59,7 +59,7 @@ class InfrastructureContractTest(unittest.TestCase):
         self.assertEqual(
             sync["Handler"], "backend.nospoil_nfl.sync.handler.lambda_handler"
         )
-        self.assertEqual((read["Timeout"], read["MemorySize"]), (10, 256))
+        self.assertEqual((read["Timeout"], read["MemorySize"]), (10, 512))
         self.assertEqual((sync["Timeout"], sync["MemorySize"]), (45, 512))
         self.assertEqual(read["ReservedConcurrentExecutions"], 4)
         self.assertEqual(sync["ReservedConcurrentExecutions"], 1)
