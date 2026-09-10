@@ -6,6 +6,7 @@ import type {
   RatingPresentation,
   TeamView,
 } from '../types';
+import { getTeamDisplayName } from '../services/teamAssets';
 import { getExcitementColor } from '../utils/formatting';
 import { formatTeamRecord } from '../utils/records';
 import { getWeekInfo } from '../utils/scheduleWeek';
@@ -21,7 +22,7 @@ const fallbackTeam = (
   records: GameRecordSnapshots | null,
 ): TeamView => ({
   id: name,
-  name,
+  name: getTeamDisplayName({ id: name, displayName: name }),
   abbreviation: name.slice(0, 3).toUpperCase(),
   logoUrl: logoUrl ?? null,
   records,
@@ -56,6 +57,13 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
     ? 'text-neutral-500 border-white/10 bg-white/5'
     : getExcitementColor(score);
   const weekInfo = getWeekInfo(game.seasonWeek);
+  const isUnratedPreseason = game.seasonWeek.phase === 'preseason'
+    && rating.state === 'pending'
+    && rating.score === null
+    && rating.confirmationSupported === false;
+  const ratingMessage = isUnratedPreseason || rating.state === 'confirmed'
+    ? null
+    : rating.score === null ? rating.label : null;
 
   const record = (snapshots: GameRecordSnapshots | null | undefined): string => {
     if (!snapshots) return '--';
@@ -124,7 +132,8 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
     );
   };
 
-  const oddsLabel = game.odds?.trim() || '--';
+  const oddsParts = game.odds?.trim().split(/\s+/) ?? [];
+  const spreadLabel = oddsParts.length > 1 ? oddsParts.slice(1).join(' ') : oddsParts[0] || '--';
 
   return (
     <article className="bg-neutral-800/40 rounded-xl border border-white/5 overflow-hidden hover:border-white/10 transition-colors shadow-sm">
@@ -174,14 +183,16 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
           >
             {isScheduled ? (
               <>
-                <span className="text-[9px] uppercase">Odds</span>
-                <span className="text-[10px] font-bold text-center">{oddsLabel}</span>
+                <span className="text-[10px] font-bold text-center">{spreadLabel}</span>
               </>
             ) : (
               <>
-                <span className="text-[9px] font-bold text-center leading-tight">
-                  {rating.label}
-                </span>
+                {ratingMessage && (
+                  <span className="text-[9px] font-bold text-center leading-tight">
+                    {ratingMessage}
+                  </span>
+                )}
+                {isUnratedPreseason && <span className="text-[10px] font-bold text-center">--</span>}
                 {score !== null && (
                   <span className="font-black text-lg leading-none">{score.toFixed(1)}</span>
                 )}

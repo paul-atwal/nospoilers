@@ -148,6 +148,7 @@ export interface RatingPresentation {
   state: ApiRatingState;
   label: string;
   score: number | null;
+  confirmationSupported?: boolean;
 }
 
 export interface Game {

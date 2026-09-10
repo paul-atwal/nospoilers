@@ -133,6 +133,60 @@ describe('GameCard records', () => {
 });
 
 describe('GameCard week context', () => {
+  it('keeps compact team, rating, and spread presentation', () => {
+    const { rerender } = render(
+      <GameCard
+        game={makeGame({
+          home: { id: '26', name: 'Seahawks', abbreviation: 'SEA', logoUrl: null, records: null },
+          away: { id: '17', name: 'Patriots', abbreviation: 'NE', logoUrl: null, records: null },
+          homeTeam: 'Seahawks',
+          awayTeam: 'Patriots',
+          rating: { state: 'confirmed', label: 'Confirmed rating', score: 8.4 },
+        })}
+      />,
+    );
+
+    expect(screen.getByText('Seahawks')).not.toBeNull();
+    expect(screen.getByText('Patriots')).not.toBeNull();
+    expect(screen.queryByText('Confirmed rating')).toBeNull();
+    expect(screen.getByText('8.4')).not.toBeNull();
+
+    rerender(
+      <GameCard
+        game={makeGame({
+          isUpcoming: true,
+          isScheduled: true,
+          odds: 'SEA -3.5',
+          homeScore: null,
+          awayScore: null,
+        })}
+      />,
+    );
+
+    expect(screen.queryByText('Odds')).toBeNull();
+    expect(screen.getByText('-3.5')).not.toBeNull();
+  });
+
+  it('uses the simple neutral state for an intentionally unrated preseason game', () => {
+    render(
+      <GameCard
+        game={makeGame({
+          seasonWeek: { season: 2026, phase: 'preseason', week: 1 },
+          rating: {
+            state: 'pending',
+            label: 'Rating pending',
+            score: null,
+            confirmationSupported: false,
+          },
+          excitementScore: null,
+        })}
+      />,
+    );
+
+    expect(screen.queryByText('Rating pending')).toBeNull();
+    expect(screen.getByText('--')).not.toBeNull();
+  });
+
   it('shows postponed status instead of presenting it as a scheduled date', () => {
     render(<GameCard game={makeGame({
       status: 'Postponed',
