@@ -451,6 +451,40 @@ def test_validation_mismatch_retries_without_replacing_rating() -> None:
     assert repository.games[game.game_id].confirmation_retry.last_error == "nflverse_schedule_score_mismatch"
 
 
+def test_source_sequence_terminal_score_beats_larger_id_correction_row() -> None:
+    game = make_game("one", rating=provisional_rating())
+    repository = FakeRepository((game,))
+    schedule, _ = source_for((game,))
+    plays = FakePlayProvider(
+        NflversePlaySeason(
+            season=2026,
+            plays=(
+                NflversePlay(
+                    NflverseGameId("nv-one"),
+                    99,
+                    4,
+                    0.9,
+                    Score(home=10, away=7),
+                ),
+                NflversePlay(
+                    NflverseGameId("nv-one"),
+                    10,
+                    4,
+                    0.8,
+                    FINAL_SCORE,
+                ),
+            ),
+        )
+    )
+
+    result = service(repository, schedule, plays).run_due(2026, now=NOW)
+
+    assert result.confirmed_updates == 1
+    assert result.failures == 0
+    assert result.retries == 0
+    assert repository.games[game.game_id].rating.state is RatingState.CONFIRMED
+
+
 def test_source_sequence_terminal_score_mismatch_retries_without_confirmation() -> None:
     game = make_game("one", rating=provisional_rating())
     repository = FakeRepository((game,))
