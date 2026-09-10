@@ -6,7 +6,7 @@ Weekly games are intended to stay in schedule order, but the current frontend st
 
 ## How it works
 
-- The React frontend gets schedules, team details, game status, and odds from ESPN.
+- The React frontend reads schedules, teams, status, odds, and ratings from the versioned read API.
 - The FastAPI backend calculates excitement scores from play-by-play win probability.
 - Redis stores scores when `REDIS_URL` is set.
 - A local JSON file is used when Redis is not available.
@@ -29,10 +29,10 @@ npm run dev
 
 The frontend runs at `http://localhost:3000`.
 
-Set `VITE_API_URL` if the backend is not available at `http://localhost:8000/api`:
+Set `VITE_API_URL` to the API origin or base prefix (for local development use `http://127.0.0.1:8001`):
 
 ```text
-VITE_API_URL=https://your-api.example.com/api
+VITE_API_URL=https://your-api.example.com
 ```
 
 ### Backend
@@ -44,20 +44,24 @@ Requirements:
 Install packages and start the backend:
 
 ```bash
-cd backend
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload
+python -m pip install -r backend/requirements-dev.txt
+export NOSPOIL_GAMES_TABLE=nospoil-games
+export NOSPOIL_DYNAMODB_LOCAL_ENDPOINT=http://127.0.0.1:8000
+export NOSPOIL_FRONTEND_ORIGINS=http://localhost:3000
+python -m uvicorn backend.nospoil_nfl.api.local:app --host 127.0.0.1 --port 8001
 ```
 
-The backend runs at `http://localhost:8000`.
+The read API runs at `http://127.0.0.1:8001` and serves `/api/v1/bootstrap`, `/api/v1/weeks/...`, and `/api/v1/seasons/...`. It requires the DynamoDB Local table and index to exist before startup.
+
+See [backend/README.md](backend/README.md) for the complete DynamoDB Local setup and table-creation recipe. See [backend/API.md](backend/API.md) for the response contract.
 
 ## Environment variables
 
 | Name | Service | Purpose |
 | --- | --- | --- |
-| `VITE_API_URL` | Frontend | Full backend API URL, including `/api` |
+| `VITE_API_URL` | Frontend | Optional API origin/base prefix; do not include `/api` or `/api/v1` |
 | `REDIS_URL` | Backend | Optional Redis connection for shared score storage |
 | `PORT` | Backend | Server port set by the hosting platform |
 
@@ -77,9 +81,10 @@ Before deployment:
 
 - `App.tsx`: page state and weekly or season views
 - `components/GameCard.tsx`: spoiler-safe game display
+- `services/gameViewModel.ts`: display-ready API mapping and viewer-timezone kickoff labels
+- `services/teamAssets.ts`: versioned local team logo map and text fallbacks
 - `utils/scheduleWeek.ts`: structured season-week labels and navigation
-- `services/espnWeekMapper.ts`: ESPN season-type translation
-- `utils/records.ts`: frontend pregame and postgame record calculations
+- `utils/records.ts`: record formatting for display (records are supplied by the API)
 - `backend/main.py`: FastAPI endpoints and background game checks
 - `backend/nflfastr_fetcher.py`: play-by-play loading and cache access
 - `backend/nospoil_nfl/rating/`: primary excitement score calculation

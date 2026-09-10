@@ -38,7 +38,7 @@ describe('GameCard scores', () => {
     expect(screen.queryByText('24')).toBeNull();
     expect(screen.queryByText('17')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reveal Score' }));
+    fireEvent.click(screen.getByRole('button', { name: /Reveal score.*Away Team.*Home Team/i }));
 
     expect(screen.getByText('24')).not.toBeNull();
     expect(screen.getByText('17')).not.toBeNull();
@@ -46,7 +46,7 @@ describe('GameCard scores', () => {
 
   it('updates a revealed score when game props change', () => {
     const { rerender } = render(<GameCard game={makeGame()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Reveal Score' }));
+    fireEvent.click(screen.getByRole('button', { name: /Reveal score.*Away Team.*Home Team/i }));
 
     rerender(
       <GameCard
@@ -76,7 +76,7 @@ describe('GameCard records', () => {
     expect(screen.getByText('8-2')).not.toBeNull();
     expect(screen.getByText('7-3')).not.toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reveal Score' }));
+    fireEvent.click(screen.getByRole('button', { name: /Reveal score.*Away Team.*Home Team/i }));
 
     expect(screen.getByText('9-2')).not.toBeNull();
     expect(screen.getByText('7-4')).not.toBeNull();
@@ -97,7 +97,7 @@ describe('GameCard records', () => {
     expect(screen.getByText('8-2')).not.toBeNull();
     expect(screen.getByText('7-3')).not.toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reveal Score' }));
+    fireEvent.click(screen.getByRole('button', { name: /Reveal score.*Away Team.*Home Team/i }));
 
     expect(screen.getByText('8-2-1')).not.toBeNull();
     expect(screen.getByText('7-3-1')).not.toBeNull();
@@ -120,7 +120,7 @@ describe('GameCard records', () => {
 
     expect(screen.getAllByText('12-6')).toHaveLength(2);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reveal Score' }));
+    fireEvent.click(screen.getByRole('button', { name: /Reveal score.*Away Team.*Home Team/i }));
 
     expect(screen.getAllByText('12-6')).toHaveLength(2);
   });
@@ -133,6 +133,18 @@ describe('GameCard records', () => {
 });
 
 describe('GameCard week context', () => {
+  it('shows postponed status instead of presenting it as a scheduled date', () => {
+    render(<GameCard game={makeGame({
+      status: 'Postponed',
+      isUpcoming: true,
+      isScheduled: false,
+      excitementScore: null,
+      rating: { state: 'pending', label: 'Rating pending', score: null },
+    })} />);
+    expect(screen.getByText('Postponed')).not.toBeNull();
+    expect(screen.getByText('Rating pending')).not.toBeNull();
+  });
+
   it('shows the shared postseason label in the season view', () => {
     render(
       <GameCard
@@ -148,5 +160,29 @@ describe('GameCard week context', () => {
     );
 
     expect(screen.getByText('Wild Card')).not.toBeNull();
+  });
+});
+
+describe('GameCard identity and accessibility safety', () => {
+  it('resets revealed values synchronously when reused for another game identity', () => {
+    const { rerender } = render(<GameCard game={makeGame()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Reveal score.*Away Team.*Home Team/i }));
+    expect(screen.getByLabelText('Home Team score 24')).toBeTruthy();
+    rerender(<GameCard game={makeGame({ id: 'game-2', homeTeam: 'New Home', awayTeam: 'New Away', homeScore: 31, awayScore: 10 })} />);
+    expect(screen.queryByLabelText(/score 31/i)).toBeNull();
+    expect(screen.getByRole('button', { name: /Reveal score.*New Away.*New Home/i })).toBeTruthy();
+  });
+
+  it('does not expose hidden scores in accessible names and disables reveal when a score is missing', () => {
+    render(<GameCard game={makeGame({ homeScore: null, awayScore: 10 })} />);
+    expect(screen.queryByLabelText(/score 24/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Reveal score/i })).toBeNull();
+  });
+
+  it('falls back to the supplied abbreviation when a local logo fails', () => {
+    render(<GameCard game={makeGame({ home: { id: '26', name: 'Home Team', abbreviation: 'HME', logoUrl: '/team-logos/26.png', records: null } })} />);
+    fireEvent.error(screen.getByRole('img', { name: 'Home Team logo' }));
+    expect(screen.queryByRole('img', { name: 'Home Team logo' })).toBeNull();
+    expect(screen.getByLabelText('Home Team abbreviation').textContent).toBe('HME');
   });
 });

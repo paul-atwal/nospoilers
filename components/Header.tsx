@@ -8,6 +8,8 @@ interface HeaderProps {
   currentSeasonLabel: string;
   onPreviousWeek: () => void;
   onNextWeek: () => void;
+  previousDisabled?: boolean;
+  nextDisabled?: boolean;
   viewMode: 'weekly' | 'season';
   onViewModeChange: (mode: 'weekly' | 'season') => void;
 }
@@ -17,6 +19,8 @@ const Header: React.FC<HeaderProps> = ({
   currentSeasonLabel,
   onPreviousWeek,
   onNextWeek,
+  previousDisabled = false,
+  nextDisabled = false,
   viewMode,
   onViewModeChange,
 }) => {
@@ -27,7 +31,7 @@ const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center justify-between">
           
           {/* Left: Branding */}
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => onViewModeChange('weekly')}>
+          <button type="button" aria-label="Show weekly games" className="flex items-center gap-3 cursor-pointer text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 rounded-lg" onClick={() => onViewModeChange('weekly')}>
                 <div className="p-1.5 md:p-2 bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg md:rounded-xl shadow-lg shadow-blue-900/20">
                   <Tv className="w-5 h-5 md:w-6 md:h-6 text-white" />
                 </div>
@@ -37,18 +41,21 @@ const Header: React.FC<HeaderProps> = ({
                   </h1>
                   <p className="hidden xs:block text-[10px] text-neutral-400 mt-1 font-medium tracking-wide">Pure excitement. No spoilers.</p>
                 </div>
-          </div>
+          </button>
 
           {/* Right: Actions */}
           <div className="flex items-center gap-2">
               {/* Top 5 Toggle Button */}
               <button
+                  type="button"
                   onClick={() => onViewModeChange(viewMode === 'season' ? 'weekly' : 'season')}
+                  aria-label={viewMode === 'season' ? 'Return to weekly games' : 'Show Best of Season'}
+                  aria-pressed={viewMode === 'season'}
                   className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-bold transition-colors border ${
                       viewMode === 'season' 
                       ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50' 
                       : 'bg-neutral-800 text-neutral-400 border-white/5 hover:bg-neutral-700'
-                  }`}
+                  } focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400`}
               >
                   <Trophy className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Best of Season</span>
@@ -61,9 +68,11 @@ const Header: React.FC<HeaderProps> = ({
         {viewMode === 'weekly' && (
              <div className="mt-3 flex items-center justify-between bg-neutral-800/50 rounded-lg border border-white/5 p-1">
                 <button 
+                  type="button"
                   onClick={onPreviousWeek}
-                  className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300"
-                  aria-label="Previous week"
+                  disabled={previousDisabled}
+                  className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+                  aria-label={previousDisabled ? 'Previous week (first known week)' : 'Previous week'}
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -78,9 +87,11 @@ const Header: React.FC<HeaderProps> = ({
                 </div>
 
                 <button
+                  type="button"
                   onClick={onNextWeek}
-                  className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300"
-                  aria-label="Next week"
+                  disabled={nextDisabled}
+                  className="p-2 hover:bg-white/10 rounded-md transition-colors text-neutral-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+                  aria-label={nextDisabled ? 'Next week (last known week)' : 'Next week'}
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>

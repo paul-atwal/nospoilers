@@ -1,194 +1,217 @@
-
-import React, { useState } from 'react';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
-import type { Game, GameRecordSnapshots } from '../types';
+import React, { useEffect, useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
+import type {
+  Game,
+  GameRecordSnapshots,
+  RatingPresentation,
+  TeamView,
+} from '../types';
 import { getExcitementColor } from '../utils/formatting';
 import { formatTeamRecord } from '../utils/records';
 import { getWeekInfo } from '../utils/scheduleWeek';
 
 interface GameCardProps {
   game: Game;
-  showWeekContext?: boolean; // If true, shows "Week 12" instead of "Sun 1:00 PM"
+  showWeekContext?: boolean;
 }
+
+const fallbackTeam = (
+  name: string,
+  logoUrl: string | undefined,
+  records: GameRecordSnapshots | null,
+): TeamView => ({
+  id: name,
+  name,
+  abbreviation: name.slice(0, 3).toUpperCase(),
+  logoUrl: logoUrl ?? null,
+  records,
+});
 
 const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) => {
   const [isRevealed, setIsRevealed] = useState(false);
-  
-  const score = game.excitementScore ?? 0;
-  // Loading only if null. If -1 (missing data) or 0 (boring/upcoming), it's not loading.
-  const isLoading = game.excitementScore === null;
-  const isMissingData = score === -1;
+  const [imageFailed, setImageFailed] = useState({ home: false, away: false });
+  const [revealedGameId, setRevealedGameId] = useState<string | null>(null);
 
-  const colorClasses = getExcitementColor(score);
+  useEffect(() => {
+    if (revealedGameId !== null && revealedGameId !== game.id) {
+      setRevealedGameId(null);
+      setIsRevealed(false);
+      setImageFailed({ home: false, away: false });
+    }
+  }, [game.id, revealedGameId]);
+
+  const home = game.home ?? fallbackTeam(game.homeTeam, game.homeTeamLogo, game.homeRecord);
+  const away = game.away ?? fallbackTeam(game.awayTeam, game.awayTeamLogo, game.awayRecord);
+  const rating: RatingPresentation = game.rating ?? {
+    state: game.excitementScore === null ? 'pending' : 'confirmed',
+    label: game.excitementScore === null ? 'Rating pending' : 'Confirmed rating',
+    score: game.excitementScore,
+  };
+  const scoreAvailable = game.homeScore !== null && game.awayScore !== null;
+  const canReveal = scoreAvailable && !game.isUpcoming;
+  const revealActive = revealedGameId === game.id && isRevealed;
+  const score = rating.score;
+  const isScheduled = game.isScheduled ?? game.isUpcoming;
+  const colorClasses = score === null
+    ? 'text-neutral-500 border-white/10 bg-white/5'
+    : getExcitementColor(score);
   const weekInfo = getWeekInfo(game.seasonWeek);
-  
-  const isHomeWinner = isRevealed && game.homeScore > game.awayScore;
-  const isAwayWinner = isRevealed && game.awayScore > game.homeScore;
-  
-  // Parse odds nicely if they exist (e.g. "CHI -2.5" -> "CHI" top, "-2.5" bottom)
-  const oddsParts = game.odds ? game.odds.split(' ') : null;
-  const teamAbbr = oddsParts ? oddsParts[0] : '--';
-  const spreadVal = oddsParts ? oddsParts.slice(1).join('') : '';
 
-  const displayRecord = (snapshots: GameRecordSnapshots | null): string => {
+  const record = (snapshots: GameRecordSnapshots | null | undefined): string => {
     if (!snapshots) return '--';
-    const snapshot = isRevealed
+    const selected = revealActive
       ? snapshots.postgame ?? snapshots.pregame
       : snapshots.pregame;
-    return formatTeamRecord(snapshot.record);
+    return formatTeamRecord(selected.record);
   };
 
-  return (
-    <div className="bg-neutral-800/40 rounded-xl border border-white/5 overflow-hidden hover:border-white/10 transition-colors shadow-sm">
-      <div className="p-3 md:p-4 flex gap-3 md:gap-4">
-        
-        {/* Left Side: Info + Teams */}
-        <div className="flex-1 min-w-0 flex flex-col justify-center py-1">
-            
-            {/* Meta Row */}
-            <div className="flex items-center gap-2 text-[10px] font-bold text-neutral-400 uppercase mb-3 tracking-wider">
-                {game.isLive && (
-                    <span className="relative flex h-2 w-2 mr-1">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                    </span>
-                )}
-                
-                {game.isUpcoming ? (
-                    <>
-                       <span className="text-neutral-300">{game.dateLabel}</span>
-                       <span className="text-neutral-600">-</span>
-                       <span className="text-neutral-500">{game.dayOfWeek} {game.kickoffTime}</span>
-                    </>
-                ) : (
-                    <>
-                        <span className={game.isLive ? "text-red-400" : ""}>{game.status}</span>
-                        <span className="text-neutral-600">•</span>
-                        {showWeekContext ? (
-                             <span className="text-blue-400">{weekInfo.label}</span>
-                        ) : (
-                             <span className="text-neutral-500">{game.dayOfWeek} {game.kickoffTime}</span>
-                        )}
-                    </>
-                )}
-                
-                {game.broadcaster && !showWeekContext && (
-                   <>
-                    <span className="text-neutral-600 hidden xs:inline">•</span>
-                    <span className="text-neutral-500 hidden xs:inline">{game.broadcaster}</span>
-                   </>
-                )}
-            </div>
+  const TeamRow = ({
+    side,
+    team,
+    teamScore,
+  }: {
+    side: 'home' | 'away';
+    team: TeamView;
+    teamScore: number | null;
+  }) => {
+    const failed = imageFailed[side];
+    const winner = side === 'home'
+      ? game.homeScore! > game.awayScore!
+      : game.awayScore! > game.homeScore!;
 
-            {/* Teams Stack */}
-            <div className="flex flex-col gap-3">
-                
-                {/* Away Team */}
-                <div className="flex items-center justify-between pr-2">
-                    <div className="flex items-center gap-3 min-w-0">
-                        {game.awayTeamLogo ? (
-                            <img src={game.awayTeamLogo} alt={game.awayTeam} className="w-7 h-7 md:w-8 md:h-8 object-contain" />
-                        ) : (
-                            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-neutral-700 flex items-center justify-center text-xs font-bold">{game.awayTeam.charAt(0)}</div>
-                        )}
-                        <div className="flex flex-col leading-none gap-1">
-                            <span className={`text-sm md:text-base font-bold truncate ${isRevealed ? (isAwayWinner ? 'text-white' : 'text-neutral-500') : 'text-neutral-200'}`}>
-                                {game.awayTeam}
-                            </span>
-                            <span className="text-[10px] text-neutral-500 font-medium">
-                                {displayRecord(game.awayRecord)}
-                            </span>
-                        </div>
-                    </div>
-                    {isRevealed && (
-                        <span className={`font-mono font-bold text-lg ${isAwayWinner ? 'text-white' : 'text-neutral-600'}`}>
-                            {game.awayScore}
-                        </span>
-                    )}
-                </div>
-
-                {/* Home Team */}
-                <div className="flex items-center justify-between pr-2">
-                     <div className="flex items-center gap-3 min-w-0">
-                        {game.homeTeamLogo ? (
-                            <img src={game.homeTeamLogo} alt={game.homeTeam} className="w-7 h-7 md:w-8 md:h-8 object-contain" />
-                        ) : (
-                            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-neutral-700 flex items-center justify-center text-xs font-bold">{game.homeTeam.charAt(0)}</div>
-                        )}
-                        <div className="flex flex-col leading-none gap-1">
-                            <span className={`text-sm md:text-base font-bold truncate ${isRevealed ? (isHomeWinner ? 'text-white' : 'text-neutral-500') : 'text-neutral-200'}`}>
-                                {game.homeTeam}
-                            </span>
-                             <span className="text-[10px] text-neutral-500 font-medium">
-                                {displayRecord(game.homeRecord)}
-                            </span>
-                        </div>
-                    </div>
-                     {isRevealed && (
-                        <span className={`font-mono font-bold text-lg ${isHomeWinner ? 'text-white' : 'text-neutral-600'}`}>
-                            {game.homeScore}
-                        </span>
-                    )}
-                </div>
+    return (
+      <div className="flex items-center justify-between pr-2">
+        <div className="flex items-center gap-3 min-w-0">
+          {team.logoUrl && !failed ? (
+            <img
+              src={team.logoUrl}
+              alt={`${team.name} logo`}
+              onError={() => setImageFailed((previous) => ({ ...previous, [side]: true }))}
+              className="w-7 h-7 md:w-8 md:h-8 object-contain"
+            />
+          ) : (
+            <div
+              aria-label={`${team.name} abbreviation`}
+              className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-neutral-700 flex items-center justify-center text-[10px] font-bold"
+            >
+              {team.abbreviation}
             </div>
+          )}
+          <div className="flex flex-col leading-none gap-1">
+            <span
+              className={`text-sm md:text-base font-bold truncate ${
+                revealActive
+                  ? winner ? 'text-white' : 'text-neutral-500'
+                  : 'text-neutral-200'
+              }`}
+            >
+              {team.name}
+            </span>
+            <span className="text-[10px] text-neutral-500 font-medium">
+              {record(team.records)}
+            </span>
+          </div>
         </div>
-
-        {/* Right Side: Score & Actions */}
-        <div className="flex flex-col items-center justify-between min-w-[60px] border-l border-white/5 pl-3 md:pl-4 py-1">
-            
-            {/* Score/Odds Circle */}
-            <div className="flex-1 flex items-center justify-center relative">
-                {!game.isUpcoming ? (
-                    <div className={`relative w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center border-[3px] backdrop-blur-sm shadow-lg transition-all duration-300 ${isLoading || isMissingData ? 'border-white/5 bg-white/5' : colorClasses} ${game.isLive && score > 7 ? 'animate-pulse' : ''}`}>
-                        
-                        {/* Estimation Indicator */}
-                        {game.isEstimated && !isLoading && !game.isLive && (
-                             <span className="absolute -right-1 top-0 text-[10px] font-bold text-neutral-500" title="Estimated Score">~</span>
-                        )}
-
-                        {isLoading ? (
-                            game.isLive ? (
-                                <span className="text-[10px] font-bold text-red-400 tracking-wider animate-pulse">LIVE</span>
-                            ) : (
-                                <Loader2 className="w-5 h-5 text-neutral-500 animate-spin" />
-                            )
-                        ) : isMissingData ? (
-                            <Loader2 className="w-4 h-4 text-neutral-600 animate-spin" />
-                        ) : (
-                            <span className={`font-black text-lg md:text-xl leading-none ${colorClasses.split(' ')[0]}`}>
-                                {score.toFixed(1)}
-                            </span>
-                        )}
-                    </div>
-                ) : (
-                    <div className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-neutral-800/50 border-2 border-neutral-700 flex flex-col items-center justify-center text-[10px] text-neutral-400 font-bold leading-tight text-center p-1">
-                        {game.odds ? (
-                            <>
-                                <span className="block mb-0.5 text-neutral-500">{teamAbbr}</span>
-                                <span className="text-neutral-300">{spreadVal}</span>
-                            </>
-                        ) : (
-                            <span>--</span>
-                        )}
-                    </div>
-                )}
-            </div>
-
-            {/* Reveal Button (Compact Icon) */}
-            {!game.isUpcoming && (
-                <button 
-                    onClick={() => setIsRevealed(!isRevealed)}
-                    className={`mt-1 p-2 rounded-full transition-all duration-200 focus:outline-none
-                        ${isRevealed ? 'text-neutral-600 hover:bg-neutral-800' : 'text-blue-400 hover:bg-blue-500/10 hover:text-blue-300'}`}
-                    aria-label={isRevealed ? "Hide Score" : "Reveal Score"}
-                >
-                    {isRevealed ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
-            )}
-        </div>
-
+        {revealActive && (
+          <span
+            aria-label={`${team.name} score ${teamScore}`}
+            className={`font-mono font-bold text-lg ${winner ? 'text-white' : 'text-neutral-600'}`}
+          >
+            {teamScore}
+          </span>
+        )}
       </div>
-    </div>
+    );
+  };
+
+  const oddsLabel = game.odds?.trim() || '--';
+
+  return (
+    <article className="bg-neutral-800/40 rounded-xl border border-white/5 overflow-hidden hover:border-white/10 transition-colors shadow-sm">
+      <div className="p-3 md:p-4 flex gap-3 md:gap-4">
+        <div
+          id={`game-${game.id}-teams`}
+          className="flex-1 min-w-0 flex flex-col justify-center py-1"
+        >
+          <div className="flex items-center gap-2 text-[10px] font-bold text-neutral-400 uppercase mb-3 tracking-wider">
+            {game.isLive && (
+              <span className="relative flex h-2 w-2 mr-1">
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+              </span>
+            )}
+            <span className={game.isLive ? 'text-red-400' : ''}>
+              {isScheduled ? game.dateLabel || 'Date TBD' : game.status}
+            </span>
+            <span className="text-neutral-600">•</span>
+            {showWeekContext ? (
+              <span className="text-blue-400">{weekInfo.label}</span>
+            ) : (
+              <span className="text-neutral-500">
+                {game.kickoff?.time === 'Kickoff time TBD'
+                  ? game.kickoff.time
+                  : `${game.dayOfWeek} ${game.kickoffTime}`}
+              </span>
+            )}
+            {game.kickoff?.zone && !showWeekContext && (
+              <span className="text-neutral-500">{game.kickoff.zone}</span>
+            )}
+            {game.broadcaster && !showWeekContext && (
+              <span className="text-neutral-500 hidden xs:inline">{game.broadcaster}</span>
+            )}
+          </div>
+          <div className="flex flex-col gap-3">
+            <TeamRow side="away" team={away} teamScore={game.awayScore} />
+            <TeamRow side="home" team={home} teamScore={game.homeScore} />
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-between min-w-[68px] border-l border-white/5 pl-3 md:pl-4 py-1">
+          <div
+            className={`relative w-12 h-12 md:w-14 md:h-14 rounded-full flex flex-col items-center justify-center border-[3px] ${
+              isScheduled
+                ? 'text-neutral-400 border-neutral-700 bg-neutral-800/50'
+                : colorClasses
+            }`}
+          >
+            {isScheduled ? (
+              <>
+                <span className="text-[9px] uppercase">Odds</span>
+                <span className="text-[10px] font-bold text-center">{oddsLabel}</span>
+              </>
+            ) : (
+              <>
+                <span className="text-[9px] font-bold text-center leading-tight">
+                  {rating.label}
+                </span>
+                {score !== null && (
+                  <span className="font-black text-lg leading-none">{score.toFixed(1)}</span>
+                )}
+              </>
+            )}
+          </div>
+          {canReveal && (
+            <button
+              type="button"
+              onClick={() => {
+                setRevealedGameId(game.id);
+                setIsRevealed((value) => !value);
+              }}
+              className={`mt-1 p-2 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 ${
+                revealActive
+                  ? 'text-neutral-600 hover:bg-neutral-800'
+                  : 'text-blue-400 hover:bg-blue-500/10 hover:text-blue-300'
+              }`}
+              aria-label={revealActive
+                ? `Hide score for ${away.name} at ${home.name}`
+                : `Reveal score for ${away.name} at ${home.name}`}
+              aria-describedby={`game-${game.id}-teams`}
+              aria-pressed={revealActive}
+            >
+              {revealActive ? <EyeOff size={20} /> : <Eye size={20} />}
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
   );
 };
 

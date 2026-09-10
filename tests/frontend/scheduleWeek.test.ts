@@ -1,48 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  fromEspnWeek,
-  toEspnWeek,
-} from '../../services/espnWeekMapper';
-import {
   getCurrentNflSeason,
   getNextSeasonWeek,
   getPreviousSeasonWeek,
   getRankingWeeksThrough,
   getWeekInfo,
+  selectWeekAfterBootstrapRefresh,
 } from '../../utils/scheduleWeek';
 
-
-describe('ESPN season-week mapping', () => {
-  it('preserves the season and maps every supported phase', () => {
-    expect(fromEspnWeek(2026, 1, 3)).toEqual({
-      season: 2026,
-      phase: 'preseason',
-      week: 3,
-    });
-    expect(fromEspnWeek(2026, 2, 18)).toEqual({
-      season: 2026,
-      phase: 'regular_season',
-      week: 18,
-    });
-    expect(fromEspnWeek(2026, 3, 1)).toEqual({
-      season: 2026,
-      phase: 'postseason',
-      week: 1,
-    });
-  });
-
-  it('rejects an unsupported ESPN season type', () => {
-    expect(fromEspnWeek(2026, 99, 7)).toBeNull();
-  });
-
-  it('maps a structured week back to one ESPN query', () => {
-    expect(toEspnWeek({
-      season: 2026,
-      phase: 'postseason',
-      week: 5,
-    })).toEqual({ season: 2026, seasonType: 3, week: 5 });
-  });
-});
 
 describe('season-week display', () => {
   it('prepares phase, week, and season labels in one place', () => {
@@ -126,5 +91,28 @@ describe('season-week navigation', () => {
   it('derives the NFL season across the calendar-year boundary', () => {
     expect(getCurrentNflSeason(new Date(2027, 0, 15))).toBe(2026);
     expect(getCurrentNflSeason(new Date(2027, 7, 1))).toBe(2027);
+  });
+
+  it('navigates only within the ordered API catalogue at irregular season boundaries', () => {
+    const catalogue = [
+      { season: 2020, phase: 'preseason' as const, week: 5 },
+      { season: 2020, phase: 'regular_season' as const, week: 1 },
+      { season: 2020, phase: 'regular_season' as const, week: 17 },
+      { season: 2020, phase: 'postseason' as const, week: 5 },
+      { season: 2021, phase: 'preseason' as const, week: 1 },
+    ];
+
+    expect(getNextSeasonWeek(catalogue[0], catalogue)).toEqual(catalogue[1]);
+    expect(getPreviousSeasonWeek(catalogue[0], catalogue)).toEqual(catalogue[0]);
+    expect(getNextSeasonWeek(catalogue[3], catalogue)).toEqual(catalogue[4]);
+    expect(getPreviousSeasonWeek(catalogue[4], catalogue)).toEqual(catalogue[3]);
+    expect(getNextSeasonWeek(catalogue[4], catalogue)).toEqual(catalogue[4]);
+  });
+
+  it('follows source current-week rollover only while selection is untouched', () => {
+    const oldSource = { season: 2026, phase: 'regular_season' as const, week: 18 };
+    const newSource = { season: 2026, phase: 'postseason' as const, week: 1 };
+    expect(selectWeekAfterBootstrapRefresh(oldSource, oldSource, newSource, false)).toEqual(newSource);
+    expect(selectWeekAfterBootstrapRefresh({ ...oldSource, week: 1 }, oldSource, newSource, true)).toEqual({ ...oldSource, week: 1 });
   });
 });

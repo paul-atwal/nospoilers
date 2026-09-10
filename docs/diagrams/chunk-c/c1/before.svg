@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="850" viewBox="0 0 1400 850" role="img" aria-labelledby="title desc">
+  <title id="title">C1 before: fragmented frontend source and rating requests</title>
+  <desc id="desc">App.tsx separately requests ESPN schedules and current week, then loops over games to request ratings. Requests are not cancelled and failures become empty arrays or sentinel values.</desc>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#243447"/></marker><style>text{font-family:Inter,Arial,sans-serif;fill:#14213d}.title{font-size:28px;font-weight:700}.label{font-size:18px;font-weight:700}.body{font-size:15px}.bad{fill:#fff0f0;stroke:#a61b1b;stroke-width:2}.node{fill:#eef6ff;stroke:#245ea8;stroke-width:2}.external{fill:#fff8e6;stroke:#9a6700;stroke-width:2}.line{stroke:#243447;stroke-width:2.5;fill:none;marker-end:url(#arrow)}.danger{stroke:#a61b1b;stroke-dasharray:9 6}</style></defs>
+  <rect width="1400" height="850" fill="#ffffff"/>
+  <text x="52" y="55" class="title">Before C1 — fragmented transport and derived client data</text>
+  <rect x="60" y="120" width="250" height="130" rx="12" class="node"/><text x="85" y="160" class="label">App.tsx</text><text x="85" y="190" class="body">init(), loadSchedule()</text><text x="85" y="216" class="body">processNextGame()</text>
+  <rect x="420" y="90" width="330" height="190" rx="12" class="node"/><text x="445" y="130" class="label">services/espnSchedule.ts</text><text x="445" y="162" class="body">fetchCurrentWeek()</text><text x="445" y="188" class="body">fetchSchedule(seasonWeek)</text><text x="445" y="214" class="body">adjustRecordsForFutureWeek()</text><text x="445" y="240" class="body">odds cache + source mapping</text>
+  <rect x="870" y="90" width="400" height="110" rx="12" class="external"/><text x="895" y="132" class="label">ESPN scoreboard</text><text x="895" y="164" class="body">schedule, status, score, teams, odds</text>
+  <rect x="420" y="390" width="330" height="120" rx="12" class="node"/><text x="445" y="430" class="label">services/excitementApi.ts</text><text x="445" y="462" class="body">fetchGameExcitement(game)</text><text x="445" y="488" class="body">failure → score -1</text>
+  <rect x="870" y="390" width="400" height="110" rx="12" class="external"/><text x="895" y="432" class="label">Legacy FastAPI</text><text x="895" y="464" class="body">GET /api/excitement/{gameId}</text>
+  <path d="M310 165 L420 165" class="line"/><text x="328" y="150" class="body">week</text>
+  <path d="M750 145 L870 145" class="line"/><text x="770" y="130" class="body">many source GETs</text>
+  <path d="M310 220 C360 260 360 430 420 450" class="line"/><text x="105" y="330" class="body">per-game queue after schedule</text>
+  <path d="M750 450 L870 450" class="line"/><text x="770" y="435" class="body">one GET/game</text>
+  <rect x="60" y="620" width="1210" height="145" rx="12" class="bad"/><text x="85" y="660" class="label">Failure and ownership gaps</text><text x="85" y="695" class="body">No AbortController, generation, polling policy, ETag/body retention, or page-return refresh.</text><text x="85" y="726" class="body">Schedule errors collapse to []; rating transport errors collapse to -1; old responses may update a newer selection.</text>
+  <path d="M185 250 L185 620" class="line danger"/>
+</svg>
