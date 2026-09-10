@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import subprocess
+import textwrap
+from tempfile import TemporaryDirectory
+
+import pytest
 
 
 ROOT = Path(__file__).parents[2]
@@ -19,10 +25,74 @@ def test_staging_import_is_manual_fixed_and_sequential() -> None:
     assert "id-token: write" in workflow
     assert "timeout-minutes: 90" in workflow
     assert "cancel-in-progress: false" in workflow
-    assert "for season in 2020 2021 2022 2023 2024 2025 2026" in workflow
+    assert 'seasons=(2020 2021 2022 2023 2024 2025 2026)' in workflow
     assert workflow.count("python -m backend.nospoil_nfl.sync.import_schedule") == 1
     assert workflow.count("python -m backend.nospoil_nfl.rating.reconcile") == 1
     assert "--mode correction --season" in workflow
+
+
+@pytest.mark.parametrize("failure_stage", ["import", "reconcile", "malformed"])
+def test_season_import_and_reconciliation_failures_do_not_stop_later_seasons(
+    failure_stage: str,
+) -> None:
+    """Execute the workflow shell with fake providers to test its control flow."""
+    workflow = WORKFLOW.read_text()
+    start = workflow.index("        run: |", workflow.index("Import every reviewed season"))
+    lines = workflow[start:].splitlines()[1:]
+    run_lines = []
+    for line in lines:
+        if line and not line.startswith("          "):
+            break
+        run_lines.append(line[10:] if line else "")
+    script = textwrap.dedent("\n".join(run_lines))
+
+    with TemporaryDirectory() as temp:
+        fake_python = Path(temp) / "python"
+        fake_python.write_text(
+            """#!/usr/bin/env bash
+set -euo pipefail
+  if [[ "$*" == *"sync.import_schedule"* ]]; then
+    season="${!#}"
+    printf 'import:%s\\n' "$season" >> "$EVENT_LOG"
+    if [[ "$season" == 2022 && "$FAILURE_STAGE" == malformed ]]; then
+      printf 'not-supported-final-ids\\n' > "$GITHUB_OUTPUT"
+    else
+      printf 'supported_final_game_ids=["game-%s"]\\n' "$season" > "$GITHUB_OUTPUT"
+    fi
+  if [[ "$season" == 2021 && "$FAILURE_STAGE" == import ]]; then exit 7; fi
+else
+  season=""
+  for ((i=1; i<=$#; i++)); do
+    [[ "${!i}" == "--season" ]] && { j=$((i + 1)); season="${!j}"; }
+  done
+  printf 'reconcile:%s\\n' "$season" >> "$EVENT_LOG"
+  if [[ "$season" == 2021 && "$FAILURE_STAGE" == reconcile ]]; then exit 9; fi
+fi
+"""
+        )
+        fake_python.chmod(0o755)
+        event_log = Path(temp) / "events"
+        env = os.environ | {
+            "PATH": f"{temp}:{os.environ['PATH']}",
+            "EVENT_LOG": str(event_log),
+            "FAILURE_STAGE": failure_stage,
+        }
+        result = subprocess.run(
+            ["bash", "-c", script], env=env, text=True, capture_output=True
+        )
+        assert result.returncode != 0
+        events = event_log.read_text().splitlines()
+        imports = [event for event in events if event.startswith("import:")]
+        reconciles = [event for event in events if event.startswith("reconcile:")]
+        assert imports == [f"import:{season}" for season in range(2020, 2027)]
+        expected_reconcile_seasons = range(2020, 2027)
+        if failure_stage == "import":
+            expected_reconcile_seasons = (2020, 2022, 2023, 2024, 2025, 2026)
+        elif failure_stage == "malformed":
+            expected_reconcile_seasons = (2020, 2021, 2023, 2024, 2025, 2026)
+        assert reconciles == [f"reconcile:{season}" for season in expected_reconcile_seasons]
+        assert events == imports + reconciles
+        assert "attention required" in result.stdout
 
 
 def test_workflow_uses_pinned_oidc_bounded_dependencies_and_validated_ids() -> None:
@@ -47,7 +117,7 @@ def test_workflow_uses_pinned_oidc_bounded_dependencies_and_validated_ids() -> N
     assert 'jq -e \'type == "array"' in workflow
     assert 'test("^[A-Za-z0-9._:-]+$")' in workflow
     assert 'reconcile_args+=(--game-id "$game_id")' in workflow
-    assert "trap 'rm -f \"$output\"' EXIT" in workflow
+    assert "trap 'rm -rf \"$workdir\"' EXIT" in workflow
     assert "NOSPOIL_IMPORT_ROLE_ARN: ${{ vars.NOSPOIL_IMPORT_ROLE_ARN }}" in workflow
     assert "role-to-assume: ${{ vars.NOSPOIL_IMPORT_ROLE_ARN }}" in workflow
     assert '"$NOSPOIL_IMPORT_ROLE_ARN"' in workflow

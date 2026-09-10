@@ -59,28 +59,66 @@ jobs:
           role-to-assume: ${{ vars.NOSPOIL_IMPORT_ROLE_ARN }}
           aws-region: ${{ vars.NOSPOIL_AWS_REGION }}
           role-session-name: nospoil-staging-import
-      - name: Import one reviewed season at a time and reconcile once
+      - name: Import every reviewed season, then reconcile captured IDs
         shell: bash
         run: |
           set -euo pipefail
-          for season in 2020 2021 2022 2023 2024 2025 2026; do
-            output="$(mktemp)"
-            trap 'rm -f "$output"' EXIT
-            GITHUB_OUTPUT="$output" python -m backend.nospoil_nfl.sync.import_schedule --season "$season"
-            ids="$(sed -n 's/^supported_final_game_ids=//p' "$output")"
-            jq -e 'type == "array" and all(.[]; type == "string" and test("^[A-Za-z0-9._:-]+$"))' <<< "$ids" >/dev/null
-            if [[ "$ids" == "[]" ]]; then
-              echo "No supported final IDs for $season; skipping reconciliation."
-              rm -f "$output"
-              trap - EXIT
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+          seasons=(2020 2021 2022 2023 2024 2025 2026)
+          import_failures=()
+          reconciliation_failures=()
+
+          # Keep this pass import-only. A known source-data correction can fail
+          # without preventing the remaining season inventories from loading.
+          for season in "${seasons[@]}"; do
+            output="$workdir/$season.output"
+            : > "$output"
+            import_rc=0
+            GITHUB_OUTPUT="$output" python -m backend.nospoil_nfl.sync.import_schedule --season "$season" || import_rc=$?
+            if (( import_rc != 0 )); then
+              import_failures+=("$season (exit $import_rc)")
               continue
             fi
-            mapfile -t game_ids < <(jq -r '.[]' <<< "$ids")
+            ids="$(sed -n 's/^supported_final_game_ids=//p' "$output")"
+            if ! jq -e 'type == "array" and all(.[]; type == "string" and test("^[A-Za-z0-9._:-]+$"))' <<< "$ids" >/dev/null; then
+              import_failures+=("$season (invalid supported_final_game_ids)")
+              continue
+            fi
+            printf '%s\n' "$ids" > "$workdir/$season.ids"
+          done
+
+          # Reconcile only after all seven imports have had a chance to run.
+          for season in "${seasons[@]}"; do
+            ids_file="$workdir/$season.ids"
+            [[ -f "$ids_file" ]] || continue
+            ids="$(<"$ids_file")"
+            if [[ "$ids" == "[]" ]]; then
+              echo "No supported final IDs for $season; skipping reconciliation."
+              continue
+            fi
+            game_ids=()
+            while IFS= read -r game_id; do
+              game_ids+=("$game_id")
+            done < <(jq -r '.[]' <<< "$ids")
             reconcile_args=(--mode correction --season "$season")
             for game_id in "${game_ids[@]}"; do
               reconcile_args+=(--game-id "$game_id")
             done
-            python -m backend.nospoil_nfl.rating.reconcile "${reconcile_args[@]}"
-            rm -f "$output"
-            trap - EXIT
+            reconcile_rc=0
+            python -m backend.nospoil_nfl.rating.reconcile "${reconcile_args[@]}" || reconcile_rc=$?
+            if (( reconcile_rc != 0 )); then
+              reconciliation_failures+=("$season (exit $reconcile_rc)")
+            fi
           done
+
+          if (( ${#import_failures[@]} || ${#reconciliation_failures[@]} )); then
+            echo "Staging inventory completed with attention required."
+            if (( ${#import_failures[@]} )); then
+              printf 'Import failures: %s\n' "${import_failures[*]}"
+            fi
+            if (( ${#reconciliation_failures[@]} )); then
+              printf 'Reconciliation failures: %s\n' "${reconciliation_failures[*]}"
+            fi
+            exit 1
+          fi

@@ -10,11 +10,41 @@ Configure each GitHub environment from the matching CloudFormation outputs:
 `NOSPOIL_GAMES_TABLE`, `NOSPOIL_OPERATIONS_ROLE_ARN`,
 `NOSPOIL_IMPORT_ROLE_ARN`, `NOSPOIL_RECONCILE_ROLE_ARN`,
 `NOSPOIL_AWS_REGION`, and `NOSPOIL_SCHEDULE_INDEX` (`season-schedule-index`).
+The repository-level variable `NOSPOIL_RECONCILIATION_SCHEDULE_ENABLED`
+defaults to off; set it to `true` only after production verification.
 The staging import role is `NOSPOIL_IMPORT_ROLE_ARN` and may write only
 `nospoil-staging-games`. Optionally set the bounded
 `NOSPOIL_ESPN_TIMEOUT_SECONDS` (at most 8) and
 `NOSPOIL_NFLVERSE_TIMEOUT_SECONDS` (at most 60). Never copy staging table or
 role values into the production GitHub environment.
+
+## Authorized CloudShell deployment
+
+The local AWS CLI intentionally has no credentials. For an authorized staging
+deployment, open AWS CloudShell in `us-west-2`, authenticate as the approved
+account, and run the reviewed revision without placing access keys in files or
+logs:
+
+```bash
+git clone https://github.com/paul-atwal/nospoilers.git
+cd nospoilers
+# Substitute the immutable PM-accepted commit SHA for <PM-accepted-commit>.
+git checkout <PM-accepted-commit>
+export AWS_REGION=us-west-2
+export NOSPOIL_SCHEDULE_STATE=DISABLED
+export NOSPOIL_FRONTEND_ORIGIN=https://nospoilers-web.onrender.com
+export NOSPOIL_ALERT_EMAIL=paulatwal_@hotmail.com
+bash infra/deploy.sh staging
+```
+
+Confirm the CloudFormation stack reaches `UPDATE_COMPLETE`, then inspect the
+outputs and run a scoped read/API check. Keep AWS Scheduler resources disabled
+and keep `reconcile-ratings.yml` manually disabled until the gate-bearing commit
+reaches the default branch. Then re-enable the workflow while the repository
+variable is absent or `false`, and use manual dispatch for staging and
+production verification. Only after those checks pass should the repository
+variable be set to `NOSPOIL_RECONCILIATION_SCHEDULE_ENABLED=true`. Chunk E owns
+that sequence and must retain manual dispatch while the gate is off.
 
 ## Health and freshness
 

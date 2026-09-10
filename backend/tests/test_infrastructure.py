@@ -300,12 +300,25 @@ class InfrastructureContractTest(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/reconcile-ratings.yml").read_text()
         self.assertIn("id-token: write", workflow)
         self.assertIn("contents: read", workflow)
-        self.assertIn("environment: ${{ inputs.environment || 'staging' }}", workflow)
+        self.assertIn(
+            "environment: ${{ github.event_name == 'schedule' && 'production' || inputs.environment || 'staging' }}",
+            workflow,
+        )
         self.assertIn(
             "role-to-assume: ${{ vars.NOSPOIL_RECONCILE_ROLE_ARN }}", workflow
         )
         self.assertNotIn("AWS_ACCESS_KEY_ID", workflow)
         self.assertNotIn("AWS_SECRET_ACCESS_KEY", workflow)
+
+    def test_reconciliation_schedule_is_gated_but_manual_dispatch_is_live(self) -> None:
+        workflow = (ROOT / ".github/workflows/reconcile-ratings.yml").read_text()
+        self.assertIn(
+            "if: github.event_name == 'workflow_dispatch' || vars.NOSPOIL_RECONCILIATION_SCHEDULE_ENABLED == 'true'",
+            workflow,
+        )
+        self.assertIn("schedule:", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("default: staging", workflow)
 
     def test_deploy_script_preserves_rollback_and_starts_schedules_disabled(
         self,

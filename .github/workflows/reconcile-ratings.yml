@@ -43,8 +43,11 @@ concurrency:
 jobs:
   reconcile:
     name: Reconcile ratings
+    # The schedule is present for a reviewed production enablement, but stays
+    # off by default. Manual dispatch remains available in every environment.
+    if: github.event_name == 'workflow_dispatch' || vars.NOSPOIL_RECONCILIATION_SCHEDULE_ENABLED == 'true'
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || 'staging' }}
+    environment: ${{ github.event_name == 'schedule' && 'production' || inputs.environment || 'staging' }}
     timeout-minutes: 20
     env:
       MODE: ${{ inputs.mode || 'due' }}
