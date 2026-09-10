@@ -1,4 +1,4 @@
-"""Operator entry point for one reviewed, catalogued staging season import."""
+"""Operator entry point for one reviewed, catalogued season import."""
 
 from __future__ import annotations
 
@@ -17,6 +17,9 @@ from .service import ImportResult, ScheduleSyncService
 
 DEFAULT_ESPN_TIMEOUT_SECONDS = 8.0
 MAX_ESPN_TIMEOUT_SECONDS = 8.0
+ALLOWED_GAMES_TABLES = frozenset(
+    {"nospoil-staging-games", "nospoil-production-games"}
+)
 
 
 def main(
@@ -38,9 +41,10 @@ def main(
             week for week in selected_calendar.known_weeks if week.season == season
         )
         table_name = _required_environment("NOSPOIL_GAMES_TABLE")
-        if table_name != "nospoil-staging-games":
+        if table_name not in ALLOWED_GAMES_TABLES:
             raise RuntimeError(
-                "inventory import is restricted to nospoil-staging-games"
+                "inventory import is restricted to nospoil-staging-games or "
+                "nospoil-production-games"
             )
         index_name = os.environ.get("NOSPOIL_SCHEDULE_INDEX") or "season-schedule-index"
         timeout = _bounded_timeout()
@@ -71,14 +75,14 @@ def main(
             {
                 "ok": False,
                 "error": type(error).__name__,
-                "message": str(error) or "staging import failed",
+                "message": str(error) or "inventory import failed",
             }
         )
         return 1
 
 
 def _parse_args(argv: Sequence[str] | None) -> Namespace:
-    parser = ArgumentParser(description="Import one reviewed staging season.")
+    parser = ArgumentParser(description="Import one reviewed season.")
     parser.add_argument("--season", required=True, type=_positive_int)
     return parser.parse_args(argv)
 
@@ -186,7 +190,7 @@ def _publish(payload: dict[str, object]) -> None:
     if summary_path is None or not summary_path.strip():
         return
     with open(summary_path, "a", encoding="utf-8") as summary:
-        summary.write("## Staging schedule import\n\n")
+        summary.write("## Schedule inventory import\n\n")
         summary.write(f"- Status: `{('ok' if payload['ok'] else 'attention')}`\n")
         if payload["ok"]:
             summary.write(f"- Season: `{payload['season']}`\n")

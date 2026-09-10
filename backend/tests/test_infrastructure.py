@@ -120,12 +120,14 @@ class InfrastructureContractTest(unittest.TestCase):
                 "dynamodb:Query",
             },
         )
-        self.assertEqual(self.resources["GitHubImportRole"]["Condition"], "IsStaging")
+        self.assertNotIn("Condition", self.resources["GitHubImportRole"])
         self.assertEqual(
-            self.env["Conditions"]["IsStaging"],
-            {"Fn::Equals": [{"Ref": "Environment"}, "staging"]},
+            trust["Condition"]["StringLike"][
+                "token.actions.githubusercontent.com:sub"
+            ]["Fn::Sub"],
+            "repo:${GitHubRepository}:environment:${Environment}",
         )
-        self.assertEqual(self.env["Outputs"]["ImportRoleArn"]["Condition"], "IsStaging")
+        self.assertNotIn("Condition", self.env["Outputs"]["ImportRoleArn"])
         self.assertEqual(
             self.env["Outputs"]["ImportRoleArn"]["Value"],
             {"Fn::GetAtt": ["GitHubImportRole", "Arn"]},

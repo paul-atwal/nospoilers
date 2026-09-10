@@ -348,7 +348,10 @@ class NflverseReconciliationService:
                 or mapped.schedule_game.final_score != final_score
             ):
                 raise _ValidationFailure("nflverse_schedule_score_mismatch")
-            plays = sorted(mapped.plays, key=lambda play: play.play_number)
+            # The provider preserves nflverse's source sequence.  Numeric
+            # play IDs are not chronological for every game: correction rows
+            # can be inserted later with a larger ID than END GAME.
+            plays = mapped.plays
             wp_history = tuple(
                 play.home_win_probability
                 for play in plays
