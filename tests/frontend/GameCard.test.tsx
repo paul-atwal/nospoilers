@@ -189,6 +189,18 @@ describe('GameCard week context', () => {
     expect(screen.getByText('--')).not.toBeNull();
   });
 
+  it('does not show a pending rating while a game is live', () => {
+    render(<GameCard game={makeGame({
+      status: '3:18 - 1ST QUARTER',
+      isLive: true,
+      rating: { state: 'pending', label: 'Rating pending', score: null },
+      excitementScore: null,
+    })} />);
+
+    expect(screen.queryByText('Rating pending')).toBeNull();
+    expect(screen.getByText('--')).not.toBeNull();
+  });
+
   it('shows postponed status instead of presenting it as a scheduled date', () => {
     render(<GameCard game={makeGame({
       status: 'Postponed',
