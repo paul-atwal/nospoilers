@@ -198,7 +198,8 @@ describe('GameCard week context', () => {
     })} />);
 
     expect(screen.queryByText('Rating pending')).toBeNull();
-    expect(screen.getByText('--')).not.toBeNull();
+    expect(screen.getByText('LIVE')).not.toBeNull();
+    expect(screen.getByLabelText('Live game')).not.toBeNull();
   });
 
   it('shows postponed status instead of presenting it as a scheduled date', () => {

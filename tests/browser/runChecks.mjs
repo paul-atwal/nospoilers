@@ -64,12 +64,15 @@ assert(await page.getByText('Fast Week Two').isVisible(), 'late week-one respons
 assert(await page.getByText('Slow Week One').count() === 0, 'stale week-one game became visible');
 
 await gotoScenario(page, 'lifecycle');
+await page.setViewportSize({ width: 390, height: 844 });
 const scheduledSpread = page.getByLabel('Spread SEA -3.5');
 await scheduledSpread.waitFor();
 const scheduledCard = page.locator('article').first();
 const scheduledCardBox = await scheduledCard.boundingBox();
 const scheduledBadgeBox = await scheduledSpread.boundingBox();
+const scheduledMetadataBox = await page.locator('[data-testid="game-game-1-metadata"]').boundingBox();
 assert(scheduledCardBox && scheduledBadgeBox, 'scheduled odds geometry was not measurable');
+assert(scheduledMetadataBox && scheduledMetadataBox.height < 24, 'scheduled mobile metadata wrapped unexpectedly');
 assert(Math.abs((scheduledBadgeBox.y + scheduledBadgeBox.height / 2) - (scheduledCardBox.y + scheduledCardBox.height / 2)) < 2, 'scheduled odds badge was not vertically centered');
 assert(await page.getByText('SEA', { exact: true }).count() > 0, 'favorite team acronym was not rendered');
 assert(await page.getByText('-3.5', { exact: true }).count() > 0, 'spread value was not rendered');
@@ -78,6 +81,10 @@ assert(await page.getByRole('button', { name: /Reveal score/ }).count() === 0, '
 await screenshot(page, 'scheduled-desktop.png');
 await page.getByRole('status').filter({ hasText: 'Showing stale data' }).waitFor({ state: 'visible', timeout: 5000 });
 await page.getByText('Weather delay').waitFor({ timeout: 6000 });
+await page.getByText('LIVE', { exact: true }).waitFor({ timeout: 6000 });
+const liveMetadataBox = await page.locator('[data-testid="game-game-1-metadata"]').boundingBox();
+assert(liveMetadataBox && liveMetadataBox.height < 24, 'live mobile metadata wrapped unexpectedly');
+assert(!(await page.locator('body').innerText()).includes('MST'), 'machine timezone label leaked into the mobile card');
 assert(await page.getByRole('button', { name: /Reveal score/ }).count() === 0, 'scoreless delay exposed reveal');
 const reveal = page.getByRole('button', { name: /Reveal score for Patriots at Seahawks/ });
 await reveal.waitFor({ timeout: 6000 });
@@ -150,15 +157,6 @@ await screenshot(page, 'season-desktop.png');
 await page.setViewportSize({ width: 390, height: 844 });
 assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'narrow layout has horizontal overflow');
 await screenshot(page, 'season-narrow.png');
-
-const nyContext = await browser.newContext({ viewport: { width: 900, height: 700 }, locale: 'fr-FR', timezoneId: 'America/New_York' });
-const nyPage = await nyContext.newPage();
-attachDiagnostics(nyPage);
-await gotoScenario(nyPage, 'unsupported');
-await nyPage.getByText('ET').waitFor();
-await gotoScenario(page, 'unsupported');
-await page.getByText('PT').waitFor();
-await nyContext.close();
 
 const allowedRequest = (url) => url.startsWith(appUrl) || url.startsWith(mockUrl) || url.startsWith('https://cdn.tailwindcss.com');
 const unexpectedRequests = requests.filter((url) => !allowedRequest(url));

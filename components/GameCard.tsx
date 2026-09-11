@@ -145,9 +145,13 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
           id={`game-${game.id}-teams`}
           className="flex-1 min-w-0 flex flex-col justify-center py-1"
         >
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-bold text-neutral-400 uppercase mb-3 tracking-wider leading-tight">
+          <div
+            data-testid={`game-${game.id}-metadata`}
+            className="flex items-center gap-2 text-[10px] font-bold text-neutral-400 uppercase mb-3 tracking-wider"
+          >
             {game.isLive && (
               <span className="relative flex h-2 w-2 mr-1 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
               </span>
             )}
@@ -158,14 +162,11 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
             {showWeekContext ? (
               <span className="text-blue-400">{weekInfo.label}</span>
             ) : (
-              <span className="text-neutral-500 shrink-0 whitespace-nowrap">
+              <span className="text-neutral-500">
                 {game.kickoff?.time === 'Kickoff time TBD'
                   ? game.kickoff.time
                   : `${game.dayOfWeek} ${game.kickoffTime}`}
               </span>
-            )}
-            {game.kickoff?.zone && !showWeekContext && (
-              <span className="text-neutral-500 shrink-0 whitespace-nowrap">{game.kickoff.zone}</span>
             )}
             {game.broadcaster && !showWeekContext && (
               <span className="text-neutral-500 hidden sm:inline">{game.broadcaster}</span>
@@ -179,7 +180,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
         <div className="flex flex-col items-center justify-between min-w-[68px] border-l border-white/5 pl-3 md:pl-4 py-1">
           <div className="flex-1 w-full flex items-center justify-center relative">
             <div
-              aria-label={`Spread ${oddsLabel}`}
+              aria-label={isScheduled ? `Spread ${oddsLabel}` : game.isLive ? 'Live game' : `Rating ${score ?? 'pending'}`}
               className={`relative w-12 h-12 md:w-14 md:h-14 rounded-full flex flex-col items-center justify-center border-[3px] ${
                 isScheduled
                   ? 'text-neutral-400 border-neutral-700 bg-neutral-800/50'
@@ -195,12 +196,20 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
                 </>
               ) : (
                 <>
-                  {ratingMessage && (
+                  {game.isLive ? (
+                    <span className="flex items-center gap-1 text-[9px] font-bold tracking-wider text-red-400">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
+                      </span>
+                      LIVE
+                    </span>
+                  ) : ratingMessage && (
                     <span className="text-[9px] font-bold text-center leading-tight">
                       {ratingMessage}
                     </span>
                   )}
-                  {(isUnratedPreseason || game.isLive) && <span className="text-[10px] font-bold text-center">--</span>}
+                  {isUnratedPreseason && <span className="text-[10px] font-bold text-center">--</span>}
                   {!game.isLive && score !== null && (
                     <span className="font-black text-lg leading-none">{score.toFixed(1)}</span>
                   )}
