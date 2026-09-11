@@ -1,4 +1,4 @@
-# Render Blueprint - static site only; publication is intentionally manual during D1.
+# Render Blueprint - static site only.
 # https://render.com/docs/blueprint-spec
 
 services:
@@ -14,4 +14,16 @@ services:
       - path: /*
         name: Cache-Control
         value: public, max-age=0, must-revalidate
-    autoDeploy: false
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://huybe3ngk4pj6i6de2w4kea75u0qdxmt.lambda-url.us-west-2.on.aws; font-src 'self' data:; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'"
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(), microphone=(), geolocation=()
+    autoDeploy: true

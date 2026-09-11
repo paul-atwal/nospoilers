@@ -1,7 +1,6 @@
 # Shared dependency resolution inputs for Python 3.11 on Linux.
-# Keep every runtime/test entry point represented here so one lock graph is
-# used by legacy, CI, and Lambda installs.
--r requirements.in
+# Keep every active runtime/test entry point represented here so one lock graph
+# is used by CI and Lambda installs.
 -r requirements-dev.in
 -r requirements-read.in
 -r requirements-sync.in

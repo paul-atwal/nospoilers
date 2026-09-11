@@ -74,12 +74,10 @@ jobs:
           cache-dependency-path: |
             backend/constraints.in
             backend/constraints.txt
-            backend/requirements.in
             backend/requirements-dev.in
             backend/requirements-read.in
             backend/requirements-sync.in
             backend/requirements-reconcile.in
-            backend/requirements.txt
             backend/requirements-dev.txt
             backend/requirements-read.txt
             backend/requirements-sync.txt
