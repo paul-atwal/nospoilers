@@ -50,6 +50,19 @@ async function renderWithBootstrapRollover(initial: SeasonWeek, refreshed: Seaso
 }
 
 describe('App bootstrap rollover selection ownership', () => {
+  it('restores detailed rating explanations and score bands', async () => {
+    await renderWithBootstrapRollover(week(1), week(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rating Info' }));
+
+    expect(screen.getByText(/play-by-play data from 2,600\+ games/)).toBeTruthy();
+    expect(screen.getByText(/Game Volatility \(Primary\)/)).toBeTruthy();
+    expect(screen.getByText(/Comeback Factor \(Bonus\)/)).toBeTruthy();
+    expect(screen.getByText('Score Guide')).toBeTruthy();
+    expect(screen.getByText(/Must Watch \(Top 5%\)/)).toBeTruthy();
+    expect(screen.getByText(/Skip It/)).toBeTruthy();
+  });
+
   it('advances an untouched selection when source current week rolls over', async () => {
     const fetchMock = await renderWithBootstrapRollover(week(1), week(2));
 
