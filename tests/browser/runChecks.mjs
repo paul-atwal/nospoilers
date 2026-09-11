@@ -151,13 +151,13 @@ await page.setViewportSize({ width: 390, height: 844 });
 assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'narrow layout has horizontal overflow');
 await screenshot(page, 'season-narrow.png');
 
-const nyContext = await browser.newContext({ viewport: { width: 900, height: 700 }, timezoneId: 'America/New_York' });
+const nyContext = await browser.newContext({ viewport: { width: 900, height: 700 }, locale: 'fr-FR', timezoneId: 'America/New_York' });
 const nyPage = await nyContext.newPage();
 attachDiagnostics(nyPage);
 await gotoScenario(nyPage, 'unsupported');
-await nyPage.getByText('EDT').waitFor();
+await nyPage.getByText('ET').waitFor();
 await gotoScenario(page, 'unsupported');
-await page.getByText('PDT').waitFor();
+await page.getByText('PT').waitFor();
 await nyContext.close();
 
 const allowedRequest = (url) => url.startsWith(appUrl) || url.startsWith(mockUrl) || url.startsWith('https://cdn.tailwindcss.com');

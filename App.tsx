@@ -9,7 +9,7 @@ import type {
   SeasonWeek,
   WeekSnapshotResponse,
 } from './types';
-import { toViewGame } from './services/gameViewModel';
+import { getViewerTimeZone, toViewGame } from './services/gameViewModel';
 import { ReadApiClient, type ReadApiResponse } from './services/readApi';
 import { createRequestOwner, type RequestOwner } from './services/requestLifecycle';
 import {
@@ -62,6 +62,7 @@ const App: React.FC = () => {
   const [seasonError, setSeasonError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'weekly' | 'season'>('weekly');
   const [showRatingInfo, setShowRatingInfo] = useState(false);
+  const viewerTimeZone = getViewerTimeZone();
 
   const refreshBootstrap = () => bootstrapOwner.current.retry();
 
@@ -187,8 +188,8 @@ const App: React.FC = () => {
     ? seasonSnapshots[bootstrap.activeSeason] ?? null
     : null;
   const displayedGames = viewMode === 'season'
-    ? selectBestSeasonGames(seasonSnapshot?.games ?? []).map((game) => toViewGame(game))
-    : (weeklySnapshot?.games ?? []).map((game) => toViewGame(game));
+    ? selectBestSeasonGames(seasonSnapshot?.games ?? []).map((game) => toViewGame(game, viewerTimeZone))
+    : (weeklySnapshot?.games ?? []).map((game) => toViewGame(game, viewerTimeZone));
   const loading = viewMode === 'season' ? seasonLoading : weeklyLoading;
   const error = viewMode === 'season' ? seasonError : weeklyError;
   const hasData = viewMode === 'season'
@@ -269,9 +270,29 @@ const App: React.FC = () => {
           </button>
         </div>
         {showRatingInfo && (
-          <div className="mb-6 bg-neutral-800/50 border border-white/10 rounded-xl p-4 text-sm text-neutral-300">
+          <div className="mb-6 bg-neutral-800/50 border border-white/10 rounded-xl p-4 text-sm text-neutral-300 animate-in fade-in slide-in-from-top-2">
             <h3 className="font-bold text-white mb-2">How Games Are Rated</h3>
-            <p className="text-xs opacity-80">Ratings are calculated from the read API snapshot.</p>
+            <p className="text-xs opacity-80 mb-3">
+              Ratings are calculated using play-by-play data from 2,600+ games (2016-2025). The average game scores around 5.0.
+            </p>
+            <div className="space-y-2 text-xs opacity-80 mb-3">
+              <div>
+                <span className="text-blue-400 font-medium">Game Volatility (Primary):</span> Measures dramatic swings in win probability throughout the game. High volatility = back-and-forth action, late-game heroics, and sustained tension.
+              </div>
+              <div>
+                <span className="text-purple-400 font-medium">Comeback Factor (Bonus):</span> Rewards teams that overcome significant deficits, adding narrative drama beyond raw volatility.
+              </div>
+            </div>
+            <div className="border-t border-white/10 pt-3">
+              <p className="text-xs font-medium text-white mb-2">Score Guide</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                <div><span className="text-purple-400">9.0+</span> <span className="opacity-70">— Must Watch (Top 5%)</span></div>
+                <div><span className="text-green-400">7.5+</span> <span className="opacity-70">— Thriller (Top 15%)</span></div>
+                <div><span className="text-blue-400">6.0+</span> <span className="opacity-70">— Good Game</span></div>
+                <div><span className="text-yellow-400">4.0+</span> <span className="opacity-70">— Decent</span></div>
+                <div><span className="text-red-400">&lt;4.0</span> <span className="opacity-70">— Skip It</span></div>
+              </div>
+            </div>
           </div>
         )}
         {bootstrapError && (

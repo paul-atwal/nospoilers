@@ -39,7 +39,7 @@ const Header: React.FC<HeaderProps> = ({
                   <h1 className="text-lg md:text-xl font-bold tracking-tight text-white leading-none">
                     NoSpoil <span className="text-blue-400">NFL</span>
                   </h1>
-                  <p className="hidden xs:block text-[10px] text-neutral-400 mt-1 font-medium tracking-wide">Pure excitement. No spoilers.</p>
+                  <p className="hidden sm:block text-[10px] text-neutral-400 mt-1 font-medium tracking-wide">Pure excitement. No spoilers.</p>
                 </div>
           </button>
 

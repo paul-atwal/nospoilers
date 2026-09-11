@@ -5,16 +5,22 @@ const STATUS_LABELS: Record<ApiGame['status']['state'], string> = {
   scheduled: 'Scheduled', in_progress: 'In Progress', final: 'Final', delayed: 'Delayed', postponed: 'Postponed', cancelled: 'Cancelled',
 };
 
-export const formatKickoff = (kickoffAt: string | null, timeZone?: string): KickoffView => {
+const DISPLAY_LOCALE = 'en-US';
+
+export const getViewerTimeZone = (): string => (
+  Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+);
+
+export const formatKickoff = (kickoffAt: string | null, timeZone = getViewerTimeZone()): KickoffView => {
   if (!kickoffAt || !Number.isFinite(Date.parse(kickoffAt))) return { time: 'Kickoff time TBD', day: '', date: '', zone: '' };
   const date = new Date(kickoffAt);
-  const options = timeZone ? { timeZone } : undefined;
-  const parts = new Intl.DateTimeFormat(undefined, { ...options, hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).formatToParts(date);
+  const options = { timeZone };
+  const parts = new Intl.DateTimeFormat(DISPLAY_LOCALE, { ...options, hour: 'numeric', minute: '2-digit', timeZoneName: 'shortGeneric' }).formatToParts(date);
   const zone = parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
   return {
-    time: new Intl.DateTimeFormat(undefined, { ...options, hour: 'numeric', minute: '2-digit' }).format(date),
-    day: new Intl.DateTimeFormat(undefined, { ...options, weekday: 'short' }).format(date).toUpperCase(),
-    date: new Intl.DateTimeFormat(undefined, { ...options, month: 'numeric', day: 'numeric' }).format(date),
+    time: new Intl.DateTimeFormat(DISPLAY_LOCALE, { ...options, hour: 'numeric', minute: '2-digit' }).format(date),
+    day: new Intl.DateTimeFormat(DISPLAY_LOCALE, { ...options, weekday: 'short' }).format(date).toUpperCase(),
+    date: new Intl.DateTimeFormat(DISPLAY_LOCALE, { ...options, month: 'numeric', day: 'numeric' }).format(date),
     zone,
   };
 };
@@ -44,7 +50,7 @@ export const toRatingPresentation = (game: ApiGame): RatingPresentation => {
   };
 };
 
-export const toViewGame = (apiGame: ApiGame, timeZone?: string): Game => {
+export const toViewGame = (apiGame: ApiGame, timeZone = getViewerTimeZone()): Game => {
   const kickoff = formatKickoff(apiGame.kickoffAt, timeZone);
   const score = apiGame.status.score;
   const hasScore = score !== null && Number.isFinite(score.home) && Number.isFinite(score.away);
