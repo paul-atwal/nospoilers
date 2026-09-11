@@ -9,7 +9,7 @@ import type {
   SeasonWeek,
   WeekSnapshotResponse,
 } from './types';
-import { toViewGame } from './services/gameViewModel';
+import { getViewerTimeZone, toViewGame } from './services/gameViewModel';
 import { ReadApiClient, type ReadApiResponse } from './services/readApi';
 import { createRequestOwner, type RequestOwner } from './services/requestLifecycle';
 import {
@@ -62,6 +62,7 @@ const App: React.FC = () => {
   const [seasonError, setSeasonError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'weekly' | 'season'>('weekly');
   const [showRatingInfo, setShowRatingInfo] = useState(false);
+  const viewerTimeZone = getViewerTimeZone();
 
   const refreshBootstrap = () => bootstrapOwner.current.retry();
 
@@ -187,8 +188,8 @@ const App: React.FC = () => {
     ? seasonSnapshots[bootstrap.activeSeason] ?? null
     : null;
   const displayedGames = viewMode === 'season'
-    ? selectBestSeasonGames(seasonSnapshot?.games ?? []).map((game) => toViewGame(game))
-    : (weeklySnapshot?.games ?? []).map((game) => toViewGame(game));
+    ? selectBestSeasonGames(seasonSnapshot?.games ?? []).map((game) => toViewGame(game, viewerTimeZone))
+    : (weeklySnapshot?.games ?? []).map((game) => toViewGame(game, viewerTimeZone));
   const loading = viewMode === 'season' ? seasonLoading : weeklyLoading;
   const error = viewMode === 'season' ? seasonError : weeklyError;
   const hasData = viewMode === 'season'

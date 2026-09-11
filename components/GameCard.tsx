@@ -145,9 +145,9 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
           id={`game-${game.id}-teams`}
           className="flex-1 min-w-0 flex flex-col justify-center py-1"
         >
-          <div className="flex items-center gap-2 text-[10px] font-bold text-neutral-400 uppercase mb-3 tracking-wider">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-bold text-neutral-400 uppercase mb-3 tracking-wider leading-tight">
             {game.isLive && (
-              <span className="relative flex h-2 w-2 mr-1">
+              <span className="relative flex h-2 w-2 mr-1 shrink-0">
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
               </span>
             )}
@@ -158,17 +158,17 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
             {showWeekContext ? (
               <span className="text-blue-400">{weekInfo.label}</span>
             ) : (
-              <span className="text-neutral-500">
+              <span className="text-neutral-500 shrink-0 whitespace-nowrap">
                 {game.kickoff?.time === 'Kickoff time TBD'
                   ? game.kickoff.time
                   : `${game.dayOfWeek} ${game.kickoffTime}`}
               </span>
             )}
             {game.kickoff?.zone && !showWeekContext && (
-              <span className="text-neutral-500">{game.kickoff.zone}</span>
+              <span className="text-neutral-500 shrink-0 whitespace-nowrap">{game.kickoff.zone}</span>
             )}
             {game.broadcaster && !showWeekContext && (
-              <span className="text-neutral-500 hidden xs:inline">{game.broadcaster}</span>
+              <span className="text-neutral-500 hidden sm:inline">{game.broadcaster}</span>
             )}
           </div>
           <div className="flex flex-col gap-3">

@@ -155,9 +155,9 @@ const nyContext = await browser.newContext({ viewport: { width: 900, height: 700
 const nyPage = await nyContext.newPage();
 attachDiagnostics(nyPage);
 await gotoScenario(nyPage, 'unsupported');
-await nyPage.getByText('EDT').waitFor();
+await nyPage.getByText('ET').waitFor();
 await gotoScenario(page, 'unsupported');
-await page.getByText('PDT').waitFor();
+await page.getByText('PT').waitFor();
 await nyContext.close();
 
 const allowedRequest = (url) => url.startsWith(appUrl) || url.startsWith(mockUrl) || url.startsWith('https://cdn.tailwindcss.com');

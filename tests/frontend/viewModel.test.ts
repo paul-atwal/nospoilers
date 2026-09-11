@@ -54,11 +54,11 @@ describe('read API compatibility view model', () => {
     expect(game.awayTeam).toBe('Patriots');
   });
 
-  it('formats kickoff in the requested zone, including DST and an explicit zone label', () => {
+  it('formats kickoff in the requested zone with a stable regional label', () => {
     const kickoff = formatKickoff('2026-03-08T10:30:00Z', 'America/Los_Angeles');
     expect(kickoff.time).toMatch(/3:30/);
-    expect(kickoff.zone).toBe('PDT');
-    expect(formatKickoff('2026-03-08T10:30:00Z', 'America/New_York').zone).toBe('EDT');
+    expect(kickoff.zone).toBe('PT');
+    expect(formatKickoff('2026-03-08T10:30:00Z', 'America/New_York').zone).toBe('ET');
   });
 
   it('uses a deterministic unknown kickoff and local logo fallback', () => {
