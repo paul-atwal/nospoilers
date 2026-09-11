@@ -5,22 +5,30 @@ const STATUS_LABELS: Record<ApiGame['status']['state'], string> = {
   scheduled: 'Scheduled', in_progress: 'In Progress', final: 'Final', delayed: 'Delayed', postponed: 'Postponed', cancelled: 'Cancelled',
 };
 
-const DISPLAY_LOCALE = 'en-US';
+const ZONE_LOCALE = 'en-US';
+
+export const getViewerLocale = (): string => (
+  Intl.DateTimeFormat().resolvedOptions().locale || 'en-US'
+);
 
 export const getViewerTimeZone = (): string => (
   Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 );
 
-export const formatKickoff = (kickoffAt: string | null, timeZone = getViewerTimeZone()): KickoffView => {
+export const formatKickoff = (
+  kickoffAt: string | null,
+  timeZone = getViewerTimeZone(),
+  locale = getViewerLocale(),
+): KickoffView => {
   if (!kickoffAt || !Number.isFinite(Date.parse(kickoffAt))) return { time: 'Kickoff time TBD', day: '', date: '', zone: '' };
   const date = new Date(kickoffAt);
   const options = { timeZone };
-  const parts = new Intl.DateTimeFormat(DISPLAY_LOCALE, { ...options, hour: 'numeric', minute: '2-digit', timeZoneName: 'shortGeneric' }).formatToParts(date);
+  const parts = new Intl.DateTimeFormat(ZONE_LOCALE, { ...options, hour: 'numeric', minute: '2-digit', timeZoneName: 'shortGeneric' }).formatToParts(date);
   const zone = parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
   return {
-    time: new Intl.DateTimeFormat(DISPLAY_LOCALE, { ...options, hour: 'numeric', minute: '2-digit' }).format(date),
-    day: new Intl.DateTimeFormat(DISPLAY_LOCALE, { ...options, weekday: 'short' }).format(date).toUpperCase(),
-    date: new Intl.DateTimeFormat(DISPLAY_LOCALE, { ...options, month: 'numeric', day: 'numeric' }).format(date),
+    time: new Intl.DateTimeFormat(locale, { ...options, hour: 'numeric', minute: '2-digit' }).format(date),
+    day: new Intl.DateTimeFormat(locale, { ...options, weekday: 'short' }).format(date).toUpperCase(),
+    date: new Intl.DateTimeFormat(locale, { ...options, month: 'numeric', day: 'numeric' }).format(date),
     zone,
   };
 };
@@ -83,7 +91,8 @@ export const toViewGame = (apiGame: ApiGame, timeZone = getViewerTimeZone()): Ga
     broadcaster: apiGame.broadcaster ?? undefined,
     isUpcoming,
     isScheduled: apiGame.status.state === 'scheduled',
-    isLive: apiGame.status.state === 'in_progress' || apiGame.status.state === 'delayed',
+    isLive: apiGame.status.state === 'in_progress',
+    isDelayed: apiGame.status.state === 'delayed',
     odds: apiGame.odds?.details ?? undefined,
   };
 };

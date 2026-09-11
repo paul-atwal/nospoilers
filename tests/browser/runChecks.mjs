@@ -81,11 +81,12 @@ assert(await page.getByRole('button', { name: /Reveal score/ }).count() === 0, '
 await screenshot(page, 'scheduled-desktop.png');
 await page.getByRole('status').filter({ hasText: 'Showing stale data' }).waitFor({ state: 'visible', timeout: 5000 });
 await page.getByText('Weather delay').waitFor({ timeout: 6000 });
-await page.getByText('LIVE', { exact: true }).waitFor({ timeout: 6000 });
+assert(await page.getByText('LIVE', { exact: true }).count() === 0, 'delayed game was incorrectly labeled live');
 const liveMetadataBox = await page.locator('[data-testid="game-game-1-metadata"]').boundingBox();
 assert(liveMetadataBox && liveMetadataBox.height < 24, 'live mobile metadata wrapped unexpectedly');
 assert(!(await page.locator('body').innerText()).includes('MST'), 'machine timezone label leaked into the mobile card');
 assert(await page.getByRole('button', { name: /Reveal score/ }).count() === 0, 'scoreless delay exposed reveal');
+await page.getByText('LIVE', { exact: true }).waitFor({ timeout: 6000 });
 const reveal = page.getByRole('button', { name: /Reveal score for Patriots at Seahawks/ });
 await reveal.waitFor({ timeout: 6000 });
 await reveal.focus();

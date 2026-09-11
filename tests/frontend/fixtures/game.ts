@@ -43,6 +43,7 @@ const baseGame: Game = {
   },
   isUpcoming: false,
   isLive: false,
+  isDelayed: false,
 };
 
 export function makeGame(overrides: Partial<Game> = {}): Game {

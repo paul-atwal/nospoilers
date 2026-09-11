@@ -173,6 +173,7 @@ export interface Game {
   isUpcoming?: boolean;
   isScheduled?: boolean;
   isLive?: boolean;
+  isDelayed?: boolean;
   odds?: string;
   kickoff?: KickoffView;
   home?: TeamView;

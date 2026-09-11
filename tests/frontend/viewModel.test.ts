@@ -20,6 +20,14 @@ describe('read API compatibility view model', () => {
     expect(game.awayScore).toBeNull();
     expect(game.spoilerData.homeScore).toBeNull();
     expect(game.spoilerData.awayScore).toBeNull();
+    expect(game.isLive).toBe(false);
+    expect(game.isDelayed).toBe(true);
+  });
+
+  it('only marks an in-progress game as live', () => {
+    const game = toViewGame(makeApiGame('in_progress', { home: 7, away: 3 }));
+    expect(game.isLive).toBe(true);
+    expect(game.isDelayed).toBe(false);
   });
 
   it('keeps a missing final-game score nullable too', () => {
@@ -59,6 +67,13 @@ describe('read API compatibility view model', () => {
     expect(kickoff.time).toMatch(/3:30/);
     expect(kickoff.zone).toBe('PT');
     expect(formatKickoff('2026-03-08T10:30:00Z', 'America/New_York').zone).toBe('ET');
+  });
+
+  it('preserves the requested display locale for visible kickoff fields', () => {
+    const kickoff = formatKickoff('2026-03-09T00:30:00Z', 'America/Los_Angeles', 'de-DE');
+    expect(kickoff.time).toBe('17:30');
+    expect(kickoff.date).toBe('8.3.');
+    expect(kickoff.zone).toBe('PT');
   });
 
   it('uses a deterministic unknown kickoff and local logo fallback', () => {

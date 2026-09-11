@@ -62,7 +62,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
     && rating.score === null
     && rating.confirmationSupported === false;
   const ratingMessage = isUnratedPreseason || rating.state === 'confirmed'
-    || game.isLive
+    || game.isLive || game.isDelayed
     ? null
     : rating.score === null ? rating.label : null;
 
@@ -204,6 +204,8 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
                       </span>
                       LIVE
                     </span>
+                  ) : game.isDelayed ? (
+                    <span className="text-[10px] font-bold text-center">--</span>
                   ) : ratingMessage && (
                     <span className="text-[9px] font-bold text-center leading-tight">
                       {ratingMessage}
