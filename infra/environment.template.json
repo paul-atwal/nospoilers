@@ -293,25 +293,6 @@
         "AuthType": "NONE",
         "TargetFunctionArn": {
           "Ref": "ReadFunction"
-        },
-        "Cors": {
-          "AllowOrigins": [
-            {
-              "Ref": "FrontendOrigin"
-            }
-          ],
-          "AllowMethods": [
-            "GET",
-            "HEAD"
-          ],
-          "AllowHeaders": [
-            "If-None-Match"
-          ],
-          "ExposeHeaders": [
-            "ETag",
-            "Cache-Control",
-            "Retry-After"
-          ]
         }
       }
     },

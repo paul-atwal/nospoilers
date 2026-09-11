@@ -6,8 +6,8 @@ The read API foundation in `nospoil_nfl/api/` owns the spoiler-free snapshot
 projection, polling advice, ETag material, and the checked-in 2026 season
 calendar plus a source-verified 2020–2026 readable catalogue. It is safe for
 the HTTP read process to import: it performs no
-provider requests, downloads, calculations, writes, scheduler startup, or
-Redis initialization. The later HTTP adapter exposes these operations at
+provider requests, downloads, calculations, writes, or scheduler startup. The
+later HTTP adapter exposes these operations at
 `GET /api/v1/bootstrap`, `GET /api/v1/weeks/{season}/{phase}/{week}`, and
 `GET /api/v1/seasons/{season}`.
 
@@ -23,32 +23,14 @@ The active boundaries, ordered catalogue, and
 `nospoil_nfl/api/calendar.py`. Rollover appends the new season without removing
 historical identities.
 
-This FastAPI service calculates spoiler-free excitement scores for completed NFL games.
-
-## Data flow
-
-1. The background task checks the ESPN scoreboard near expected game end times.
-2. The service tries to load play-by-play win probability from nflverse.
-3. If recent nflverse data is not available, the service uses ESPN win probability.
-4. The excitement calculator uses win-probability volatility and a comeback bonus.
-5. The result is saved in Redis or a local JSON file.
-
-## Local setup
-
-```bash
-cd backend
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload
-```
+The active backend is a FastAPI read Lambda and a separate sync Lambda. Both use
+the `backend.nospoil_nfl` package. The old always-on service, Redis cache, JSON
+cache, and background monitor were removed after the AWS cutover.
 
 Dependency installs are resolved from one Python 3.11/Linux lock graph. Use
 the bounded set that matches the process you are running:
 
 ```bash
-# Legacy full backend / Render build (Node still uses npm ci at the repository root)
-python -m pip install -r backend/requirements.txt
 # Development and CI
 python -m pip install -r backend/requirements-dev.txt
 # Read Lambda
@@ -146,15 +128,6 @@ the install rather than silently resolving outside the shared graph. The
 constraints file intentionally has no hashes so Linux deployment resolution
 remains portable across supported architectures.
 
-The legacy service runs at `http://localhost:8000`; the read API recipe above
-uses `http://127.0.0.1:8001` so it can run alongside DynamoDB Local.
-
-You can also use the helper script:
-
-```bash
-./run.sh
-```
-
 ## Tests
 
 Install the development dependencies and run the backend tests from the repository root:
@@ -166,52 +139,8 @@ python -m pytest backend/tests
 
 ## API
 
-### `GET /`
-
-Returns service health and the number of cached games.
-
-### `GET /api/excitement/{game_id}`
-
-Returns the excitement score for one ESPN game ID.
-
-Example response:
-
-```json
-{
-  "game_id": "401671755",
-  "excitement_score": 8.5,
-  "cached": true
-}
-```
-
-### `GET /api/excitement/week/{week}`
-
-Returns excitement scores for a week.
-
-Query parameters:
-
-- `season`: NFL season year. The current default in the code is 2024.
-- `season_type`: `REG` or `POST`.
-
-### `POST /api/refresh-game/{game_id}`
-
-Forces a new lookup for one game. This endpoint is intended for maintenance and testing.
-
-## Score storage
-
-The backend uses three storage layers:
-
-1. Process memory for fast reads.
-2. Redis when `REDIS_URL` is set.
-3. `data/wp_cache.json` as a local fallback.
-
-The local file does not survive a restart or deployment on hosts with a temporary filesystem. Use Redis with persistence when saved scores must survive those events.
-
-The cache currently includes raw win-probability and score history. This makes the file larger than the live API needs, but it allows scores to be recalculated later.
-
-## Background checks
-
-The scheduler groups games by kickoff time. It checks ESPN every five minutes during expected game-ending windows and refreshes the schedule at intervals outside those windows.
+The active HTTP API is documented in [API.md](API.md). It exposes only the
+read-only versioned routes under `/api/v1/`.
 
 ## Data sources
 

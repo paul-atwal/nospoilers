@@ -1,4 +1,7 @@
--r requirements.in
+-r requirements-read.in
+-r requirements-sync.in
+-r requirements-reconcile.in
+uvicorn[standard]
 mangum
 pytest
 httpx

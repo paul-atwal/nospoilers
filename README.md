@@ -7,9 +7,8 @@ Weekly games are intended to stay in schedule order, but the current frontend st
 ## How it works
 
 - The React frontend reads schedules, teams, status, odds, and ratings from the versioned read API.
-- The FastAPI backend calculates excitement scores from play-by-play win probability.
-- Redis stores scores when `REDIS_URL` is set.
-- A local JSON file is used when Redis is not available.
+- The AWS sync Lambda calculates and stores excitement ratings from the reviewed
+  ESPN and nflverse sources.
 
 ## Local setup
 
@@ -62,20 +61,16 @@ See [backend/README.md](backend/README.md) for the complete DynamoDB Local setup
 | Name | Service | Purpose |
 | --- | --- | --- |
 | `VITE_API_URL` | Frontend | Optional API origin/base prefix; do not include `/api` or `/api/v1` |
-| `REDIS_URL` | Backend | Optional Redis connection for shared score storage |
-| `PORT` | Backend | Server port set by the hosting platform |
-
-If `REDIS_URL` is not set, the backend writes to `backend/data/wp_cache.json`. This local file is useful for development. It is not reliable storage on a hosting service with a temporary filesystem.
+| `PORT` | Backend | Server port for local tools; deployed Lambdas do not use it |
 
 ## Deployment
 
-[render.yaml](./render.yaml) defines a Render static site and FastAPI web service.
+[render.yaml](./render.yaml) defines the Render static site.
 
 Before deployment:
 
 1. Set the frontend `VITE_API_URL` during the frontend build.
-2. Set `REDIS_URL` if scores must survive backend restarts and deployments.
-3. Use persistent Redis storage if losing the cache is not acceptable.
+2. Deploy the backend through `infra/deploy.sh` and the reviewed GitHub workflows.
 
 ## Main source files
 
@@ -85,10 +80,10 @@ Before deployment:
 - `services/teamAssets.ts`: versioned local team logo map and text fallbacks
 - `utils/scheduleWeek.ts`: structured season-week labels and navigation
 - `utils/records.ts`: record formatting for display (records are supplied by the API)
-- `backend/main.py`: FastAPI endpoints and background game checks
-- `backend/nflfastr_fetcher.py`: play-by-play loading and cache access
-- `backend/nospoil_nfl/rating/`: primary excitement score calculation
+- `backend/nospoil_nfl/api/`: read-only Lambda API and snapshots
+- `backend/nospoil_nfl/sync/`: schedule and live synchronization
+- `backend/nospoil_nfl/rating/`: provisional and confirmed excitement ratings
+- `backend/nospoil_nfl/providers/`: typed ESPN and nflverse source adapters
 - `backend/nospoil_nfl/game/`: canonical game models, rules, typed updates, and the new DynamoDB repository
-- `backend/excitement_calculator.py`: compatibility calculation wrapper for legacy scripts
 
 During the playoffs, the app shows regular-season records unchanged by score reveal. Cumulative playoff records remain planned for later design and implementation.

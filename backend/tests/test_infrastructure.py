@@ -134,6 +134,12 @@ class InfrastructureContractTest(unittest.TestCase):
         )
 
     def test_public_read_url_has_both_required_permissions(self) -> None:
+        read_url = self.resources["ReadUrl"]["Properties"]
+        self.assertEqual(read_url["AuthType"], "NONE")
+        self.assertEqual(read_url["TargetFunctionArn"], {"Ref": "ReadFunction"})
+        # FastAPI's CORSMiddleware is the sole CORS authority. A Lambda URL
+        # Cors block would append a second ACAO value to browser responses.
+        self.assertNotIn("Cors", read_url)
         self.assertEqual(self.resources["ReadUrlPermission"]["DependsOn"], ["ReadUrl"])
         self.assertEqual(
             self.resources["ReadUrlInvokePermission"]["DependsOn"], ["ReadUrl"]
@@ -285,16 +291,23 @@ class InfrastructureContractTest(unittest.TestCase):
             [("FORECASTED", 80), ("ACTUAL", 100)],
         )
 
-    def test_render_is_static_only_and_publication_is_manual(self) -> None:
+    def test_render_is_static_only_and_auto_deploys(self) -> None:
         render = (ROOT / "render.yaml").read_text()
         self.assertEqual(render.count("  - type:"), 1)
         self.assertIn("name: nospoilers-web", render)
         self.assertIn("runtime: static", render)
         self.assertIn("buildCommand: npm ci && npm run build", render)
         self.assertIn("VITE_API_URL", render)
-        self.assertIn("autoDeploy: false", render)
+        self.assertIn("autoDeploy: true", render)
+        self.assertIn("Content-Security-Policy", render)
+        self.assertIn("script-src 'self'", render)
+        self.assertIn("X-Content-Type-Options", render)
         self.assertNotIn("nospoil-api", render)
         self.assertNotIn("/api/*", render)
+
+        index = (ROOT / "index.html").read_text()
+        self.assertNotIn("cdn.tailwindcss.com", index)
+        self.assertNotIn("tailwind.config", index)
 
     def test_reconciliation_uses_environment_bound_short_lived_credentials(
         self,
