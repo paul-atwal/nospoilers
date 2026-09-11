@@ -151,7 +151,7 @@ await page.setViewportSize({ width: 390, height: 844 });
 assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'narrow layout has horizontal overflow');
 await screenshot(page, 'season-narrow.png');
 
-const nyContext = await browser.newContext({ viewport: { width: 900, height: 700 }, timezoneId: 'America/New_York' });
+const nyContext = await browser.newContext({ viewport: { width: 900, height: 700 }, locale: 'fr-FR', timezoneId: 'America/New_York' });
 const nyPage = await nyContext.newPage();
 attachDiagnostics(nyPage);
 await gotoScenario(nyPage, 'unsupported');

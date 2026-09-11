@@ -5,6 +5,8 @@ const STATUS_LABELS: Record<ApiGame['status']['state'], string> = {
   scheduled: 'Scheduled', in_progress: 'In Progress', final: 'Final', delayed: 'Delayed', postponed: 'Postponed', cancelled: 'Cancelled',
 };
 
+const DISPLAY_LOCALE = 'en-US';
+
 export const getViewerTimeZone = (): string => (
   Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 );
@@ -13,12 +15,12 @@ export const formatKickoff = (kickoffAt: string | null, timeZone = getViewerTime
   if (!kickoffAt || !Number.isFinite(Date.parse(kickoffAt))) return { time: 'Kickoff time TBD', day: '', date: '', zone: '' };
   const date = new Date(kickoffAt);
   const options = { timeZone };
-  const parts = new Intl.DateTimeFormat(undefined, { ...options, hour: 'numeric', minute: '2-digit', timeZoneName: 'shortGeneric' }).formatToParts(date);
+  const parts = new Intl.DateTimeFormat(DISPLAY_LOCALE, { ...options, hour: 'numeric', minute: '2-digit', timeZoneName: 'shortGeneric' }).formatToParts(date);
   const zone = parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
   return {
-    time: new Intl.DateTimeFormat(undefined, { ...options, hour: 'numeric', minute: '2-digit' }).format(date),
-    day: new Intl.DateTimeFormat(undefined, { ...options, weekday: 'short' }).format(date).toUpperCase(),
-    date: new Intl.DateTimeFormat(undefined, { ...options, month: 'numeric', day: 'numeric' }).format(date),
+    time: new Intl.DateTimeFormat(DISPLAY_LOCALE, { ...options, hour: 'numeric', minute: '2-digit' }).format(date),
+    day: new Intl.DateTimeFormat(DISPLAY_LOCALE, { ...options, weekday: 'short' }).format(date).toUpperCase(),
+    date: new Intl.DateTimeFormat(DISPLAY_LOCALE, { ...options, month: 'numeric', day: 'numeric' }).format(date),
     zone,
   };
 };
