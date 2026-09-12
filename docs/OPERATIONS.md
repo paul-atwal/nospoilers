@@ -140,6 +140,6 @@ origin, alert address, and schedules still disabled. Do not move a
 CloudFormation-owned alias manually. Confirm the environment stack reaches
 `UPDATE_COMPLETE`, inspect its read URL and alias outputs, invoke the read URL,
 and run a scoped staging repair/verification before any production retry. The
-retained games table and current Render frontend/backend remain the data and
-traffic rollback points. Re-enable schedules only through a reviewed stack
+retained games table and current Render frontend remain the data and traffic
+rollback points. Re-enable schedules only through a reviewed stack
 deployment after staging passes and production approval is explicit.
