@@ -95,7 +95,7 @@ jobs:
           aws-region: ${{ vars.NOSPOIL_AWS_REGION }}
           role-session-name: nospoil-schedule-repair
 
-      - name: Repair ESPN final score
+      - name: Repair ESPN final score and records
         id: repair
         shell: bash
         run: |

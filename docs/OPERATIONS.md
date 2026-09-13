@@ -113,12 +113,16 @@ operator record.
 
 ## One-game repair
 
-Use the repair workflow when a durable final score is stale. The command reads
+Use the repair workflow when a durable final score or postgame record is stale. The command reads
 the durable identity, fetches one ESPN scoreboard week, validates season/week,
 game ID, both team IDs, and final status for the complete selected set, then
-updates only the final schedule status/score. Frozen records, logos, kickoff,
-broadcaster, odds, nflverse mapping, rating, and retry metadata remain owned by
-their existing writers. A mismatch, timeout, missing game, or non-final source
+updates the final schedule status/score and any changed postgame records in one
+conditional write. Pregame records remain frozen. ESPN postgame records remain
+authoritative after they advance; if ESPN still returns the frozen pregame
+record for a final regular-season game, the command derives the postgame record
+from that final result. Logos, kickoff, broadcaster, odds, nflverse mapping,
+rating, and retry metadata remain owned by their existing writers. A mismatch,
+timeout, missing game, or non-final source
 fails during the complete preflight before any mutation. A later conditional
 conflict can occur after an earlier game in the week was already repaired; the
 summary fails, but the applied writes are safe and an explicit rerun is
