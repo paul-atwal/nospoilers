@@ -220,6 +220,36 @@ def test_maps_pregame_and_in_game_delays_without_fabricating_scores(
         assert game.status.clock == "7:11"
 
 
+def test_maps_end_of_period_break_as_in_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = load_fixture("espn_scoreboard_scheduled.json")
+    event = payload["events"][0]
+    event["status"].update(
+        {
+            "period": 1,
+            "displayClock": "0:00",
+            "type": {
+                "name": "STATUS_END_PERIOD",
+                "state": "in",
+                "completed": False,
+                "description": "End of Period",
+                "detail": "End of 1st Quarter",
+                "shortDetail": "End of 1st",
+            },
+        }
+    )
+    make_client(monkeypatch, payload)
+
+    game = EspnScoreboardClient(clock=lambda: OBSERVED_AT).fetch_scoreboard().games[0]
+
+    assert game.status.state is GameState.IN_PROGRESS
+    assert game.status.period == 1
+    assert game.status.clock == "0:00"
+    assert game.status.score == Score(home=0, away=0)
+    assert game.status.detail == "End of 1st Quarter"
+
+
 def test_changed_event_date_is_returned_as_the_latest_kickoff(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
