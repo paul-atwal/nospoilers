@@ -110,7 +110,18 @@ def prepare_team_records(
         pregame = saved_pregame
         if pregame is None and result is not None:
             pregame = _subtract_results(adjusted, (result,))
-        return PreparedRecords(pregame=pregame or adjusted, postgame=adjusted)
+        postgame = adjusted
+        if (
+            saved_pregame is not None
+            and saved_pregame.record == adjusted.record
+            and result is not None
+        ):
+            # ESPN can briefly return the pregame record after publishing the
+            # final score.  Keep the source as authoritative when it moved,
+            # but derive the postgame record from the final result when it did
+            # not.
+            postgame = _apply_result(saved_pregame, result, observed_at=observed_at)
+        return PreparedRecords(pregame=pregame or adjusted, postgame=postgame)
 
     pregame = saved_pregame if has_started and saved_pregame is not None else adjusted
     postgame: RecordSnapshot | None | _Unset = UNSET if saved_team is not None else None

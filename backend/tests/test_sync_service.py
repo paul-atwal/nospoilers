@@ -785,6 +785,50 @@ def test_final_record_freezes_saved_pregame_and_adds_postgame() -> None:
     assert result.provisional_rating_game_ids == (GameId("final"),)
 
 
+def test_final_record_derives_postgame_when_source_still_has_pregame_record() -> None:
+    pregame = record(0, 0, at=OLD)
+    current = saved_game(
+        "final-stale-record",
+        home_record=pregame,
+        away_record=pregame,
+        status=GameStatus(
+            GameState.IN_PROGRESS,
+            period=4,
+            clock="00:00",
+            score=Score(20, 13),
+        ),
+    )
+    final_status = GameStatus(GameState.FINAL, score=Score(20, 13))
+    provider = FakeScoreboard(
+        batch(
+            REGULAR_1,
+            observed_game(
+                "final-stale-record",
+                status=final_status,
+                home_record=pregame,
+                away_record=pregame,
+            ),
+        )
+    )
+    repository = FakeRepository((current,))
+
+    ScheduleSyncService(repository, provider).run(
+        event(SyncMode.LIVE_TICK, season=2026),
+        now=NOW,
+    )
+
+    stored = repository.get(GameId("final-stale-record"))
+    assert stored is not None
+    assert stored.status.state is GameState.FINAL
+    assert stored.home.pregame_record == pregame
+    assert stored.home.postgame_record is not None
+    assert stored.home.postgame_record.record == TeamRecord(1, 0)
+    assert stored.home.postgame_record.snapshot_at == NOW
+    assert stored.away.postgame_record is not None
+    assert stored.away.postgame_record.record == TeamRecord(0, 1)
+    assert stored.away.postgame_record.snapshot_at == NOW
+
+
 def test_missing_records_and_started_odds_preserve_saved_values() -> None:
     known_record = record(1, 0, at=OLD)
     known_odds = OddsSnapshot("H -3.5", OLD)
