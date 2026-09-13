@@ -15,12 +15,26 @@ from argparse import ArgumentParser, ArgumentTypeError, Namespace
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from ..game.models import Game, GameId, GameState, SeasonPhase, SeasonWeek
+from ..game.models import (
+    Game,
+    GameId,
+    GameState,
+    RecordSnapshot,
+    SeasonPhase,
+    SeasonWeek,
+)
 from ..game.repository import GameRepository
-from ..game.updates import UNSET, ScheduleUpdate, TeamScheduleUpdate, WriteResult
+from ..game.updates import (
+    UNSET,
+    ScheduleUpdate,
+    TeamScheduleUpdate,
+    WriteResult,
+    _Unset,
+)
 from ..providers import EspnScoreboardClient, ScheduleGame, ScoreboardBatch
 from ..providers.errors import ProviderError
 from ..rating.confirmation import is_confirmation_supported
+from .records import TeamSide, prepare_team_records
 
 DEFAULT_ESPN_TIMEOUT_SECONDS = 8.0
 MAX_ESPN_TIMEOUT_SECONDS = 8.0
@@ -64,7 +78,7 @@ class RepairResult:
 
 
 class ScheduleRepairService:
-    """Preflight all selected records, then repair only final score/status."""
+    """Preflight selected games, then repair final status and postgame records."""
 
     def __init__(
         self,
@@ -84,7 +98,7 @@ class ScheduleRepairService:
         self._validate_source_batch(batch, requested_week, selected, scope)
         source_by_id = {game.game_id: game for game in batch.games}
 
-        prepared: list[tuple[Game, ScheduleGame]] = []
+        prepared: list[tuple[Game, ScheduleUpdate]] = []
         unchanged = 0
         for current in selected:
             source = source_by_id.get(current.game_id)
@@ -101,43 +115,73 @@ class ScheduleRepairService:
                 raise RepairError(
                     f"ESPN game {current.game_id} is not final; no score invented"
                 )
-            if current.status == source.status:
+            home_records = prepare_team_records(
+                phase=current.season_week.phase,
+                source_record=source.home.record,
+                source_status=source.status,
+                observed_at=batch.observed_at,
+                side=TeamSide.HOME,
+                saved_team=current.home,
+                saved_status=current.status,
+            )
+            away_records = prepare_team_records(
+                phase=current.season_week.phase,
+                source_record=source.away.record,
+                source_status=source.status,
+                observed_at=batch.observed_at,
+                side=TeamSide.AWAY,
+                saved_team=current.away,
+                saved_status=current.status,
+            )
+            home_postgame = _changed_record_or_unset(
+                current.home.postgame_record,
+                home_records.postgame,
+            )
+            away_postgame = _changed_record_or_unset(
+                current.away.postgame_record,
+                away_records.postgame,
+            )
+            if (
+                current.status == source.status
+                and home_postgame is UNSET
+                and away_postgame is UNSET
+            ):
                 unchanged += 1
                 continue
-            # Keep every field outside ESPN's final status owned by its
-            # existing durable record.  In particular, records remain frozen.
-            prepared.append((current, source))
+            prepared.append(
+                (
+                    current,
+                    ScheduleUpdate(
+                        game_id=current.game_id,
+                        observed_at=batch.observed_at,
+                        season_week=current.season_week,
+                        kickoff_at=current.kickoff_at,
+                        home=TeamScheduleUpdate(
+                            team_id=current.home.team_id,
+                            display_name=current.home.display_name,
+                            abbreviation=current.home.abbreviation,
+                            logo_key=UNSET,
+                            pregame_record=UNSET,
+                            postgame_record=home_postgame,
+                        ),
+                        away=TeamScheduleUpdate(
+                            team_id=current.away.team_id,
+                            display_name=current.away.display_name,
+                            abbreviation=current.away.abbreviation,
+                            logo_key=UNSET,
+                            pregame_record=UNSET,
+                            postgame_record=away_postgame,
+                        ),
+                        status=source.status,
+                        broadcaster=UNSET,
+                        odds=UNSET,
+                    ),
+                )
+            )
 
         repaired = 0
-        for current, source in prepared:
-            result = self._repository.apply_schedule(
-                current,
-                ScheduleUpdate(
-                    game_id=current.game_id,
-                    observed_at=batch.observed_at,
-                    season_week=current.season_week,
-                    kickoff_at=current.kickoff_at,
-                    home=TeamScheduleUpdate(
-                        team_id=current.home.team_id,
-                        display_name=current.home.display_name,
-                        abbreviation=current.home.abbreviation,
-                        logo_key=UNSET,
-                        pregame_record=UNSET,
-                        postgame_record=UNSET,
-                    ),
-                    away=TeamScheduleUpdate(
-                        team_id=current.away.team_id,
-                        display_name=current.away.display_name,
-                        abbreviation=current.away.abbreviation,
-                        logo_key=UNSET,
-                        pregame_record=UNSET,
-                        postgame_record=UNSET,
-                    ),
-                    status=source.status,
-                    broadcaster=UNSET,
-                    odds=UNSET,
-                ),
-            )
+        for current, update in prepared:
+            result = self._repository.apply_schedule(current, update)
             if result is WriteResult.STALE:
                 raise RepairConflictError(
                     f"conditional repair write lost race for {current.game_id}"
@@ -205,6 +249,22 @@ class ScheduleRepairService:
             or source.away.team_id != current.away.team_id
         ):
             raise RepairError(f"ESPN team identity mismatch for {current.game_id}")
+
+
+def _changed_record_or_unset(
+    current: RecordSnapshot | None,
+    proposed: RecordSnapshot | None | _Unset,
+) -> RecordSnapshot | None | _Unset:
+    """Return only a material postgame-record change, ignoring observation time."""
+    if proposed is UNSET:
+        return UNSET
+    if current is None or proposed is None:
+        return UNSET if current is proposed else proposed
+    if not isinstance(proposed, RecordSnapshot):
+        raise TypeError("prepared postgame record must be a RecordSnapshot")
+    if current.record == proposed.record and current.scope is proposed.scope:
+        return UNSET
+    return proposed
 
 
 def main(

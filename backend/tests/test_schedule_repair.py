@@ -90,6 +90,22 @@ class FakeRepository:
         self.games[current.game_id] = replace(
             current,
             status=update.status,
+            home=replace(
+                current.home,
+                postgame_record=(
+                    current.home.postgame_record
+                    if update.home.postgame_record is UNSET
+                    else update.home.postgame_record
+                ),
+            ),
+            away=replace(
+                current.away,
+                postgame_record=(
+                    current.away.postgame_record
+                    if update.away.postgame_record is UNSET
+                    else update.away.postgame_record
+                ),
+            ),
             schedule_checked_at=update.observed_at,
             schedule_updated_at=update.observed_at,
         )
@@ -107,14 +123,19 @@ class FakeScoreboard:
 
 
 def source_for(
-    current: Game, *, score: Score, team_ids: tuple[str, str] = ("home", "away")
+    current: Game,
+    *,
+    score: Score,
+    team_ids: tuple[str, str] = ("home", "away"),
+    home_record: RecordSnapshot | None = None,
+    away_record: RecordSnapshot | None = None,
 ) -> ScoreboardBatch:
     source_week = current.season_week
     source = ScheduleGame(
         game_id=current.game_id,
         kickoff_at=current.kickoff_at,
-        home=ScheduleTeam(team_ids[0], "Source Home", "SH"),
-        away=ScheduleTeam(team_ids[1], "Source Away", "SA"),
+        home=ScheduleTeam(team_ids[0], "Source Home", "SH", record=home_record),
+        away=ScheduleTeam(team_ids[1], "Source Away", "SA", record=away_record),
         status=GameStatus(GameState.FINAL, detail="old final", score=score),
     )
     return ScoreboardBatch(NOW, source_week, (source,))
@@ -207,6 +228,81 @@ def test_unchanged_final_is_a_noop_and_stale_write_is_failure() -> None:
         ScheduleRepairService(repository, scoreboard).run(
             RepairScope(game_id=current.game_id)
         )
+
+
+def test_final_repair_derives_stale_postgame_records_and_is_idempotent() -> None:
+    pregame = RecordSnapshot(TeamRecord(0, 0), RecordScope.REGULAR_SEASON, NOW)
+    current = replace(
+        game(
+            "401872658",
+            season=2026,
+            phase=SeasonPhase.REGULAR_SEASON,
+            score=Score(20, 13),
+        ),
+        home=TeamGameSnapshot("pit", "Steelers", "PIT", "pit", pregame, pregame),
+        away=TeamGameSnapshot("atl", "Falcons", "ATL", "atl", pregame, pregame),
+    )
+    repository = FakeRepository((current,))
+    scoreboard = FakeScoreboard(
+        source_for(
+            current,
+            score=Score(20, 13),
+            team_ids=("pit", "atl"),
+            home_record=pregame,
+            away_record=pregame,
+        )
+    )
+
+    result = ScheduleRepairService(repository, scoreboard).run(
+        RepairScope(game_id=current.game_id)
+    )
+
+    assert result.repaired == 1
+    repaired = repository.games[current.game_id]
+    assert repaired.home.pregame_record == pregame
+    assert repaired.away.pregame_record == pregame
+    assert repaired.home.postgame_record is not None
+    assert repaired.home.postgame_record.record == TeamRecord(1, 0)
+    assert repaired.away.postgame_record is not None
+    assert repaired.away.postgame_record.record == TeamRecord(0, 1)
+    assert repaired.status.score == Score(20, 13)
+
+    rerun = ScheduleRepairService(repository, scoreboard).run(
+        RepairScope(game_id=current.game_id)
+    )
+    assert rerun.repaired == 0
+    assert rerun.unchanged == 1
+    assert len(repository.writes) == 1
+
+
+def test_final_repair_keeps_advanced_espn_records_authoritative() -> None:
+    pregame = RecordSnapshot(TeamRecord(0, 0), RecordScope.REGULAR_SEASON, NOW)
+    current = replace(
+        game(season=2026, phase=SeasonPhase.REGULAR_SEASON, score=Score(20, 13)),
+        home=replace(game().home, pregame_record=pregame, postgame_record=pregame),
+        away=replace(game().away, pregame_record=pregame, postgame_record=pregame),
+    )
+    home_source = replace(pregame, record=TeamRecord(1, 0))
+    away_source = replace(pregame, record=TeamRecord(0, 1))
+    repository = FakeRepository((current,))
+    scoreboard = FakeScoreboard(
+        source_for(
+            current,
+            score=Score(20, 13),
+            home_record=home_source,
+            away_record=away_source,
+        )
+    )
+
+    ScheduleRepairService(repository, scoreboard).run(
+        RepairScope(game_id=current.game_id)
+    )
+
+    repaired = repository.games[current.game_id]
+    assert repaired.home.postgame_record == home_source
+    assert repaired.away.postgame_record == away_source
+    assert repaired.home.pregame_record == pregame
+    assert repaired.away.pregame_record == pregame
 
 
 def test_scope_parser_requires_exact_game_or_week_scope() -> None:
