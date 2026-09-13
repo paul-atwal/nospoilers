@@ -390,7 +390,8 @@ def _normalize_status(status: object, raw_scores: Mapping[str, object]) -> GameS
     status_name = name.lower()
     is_scheduled = "schedul" in status_name or name == "STATUS_PREGAME"
     is_started = any(
-        marker in status_name for marker in ("in_progress", "playing", "halftime")
+        marker in status_name
+        for marker in ("in_progress", "playing", "halftime", "end_period")
     )
     is_finished = (
         any(marker in status_name for marker in ("final", "game_end", "completed"))
