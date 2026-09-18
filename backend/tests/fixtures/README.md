@@ -16,7 +16,8 @@ These are representative rows from the official 2025 nflverse play-by-play CSV r
 - `nflverse_pbp_regulation.json`: 2025 Week 3, Jets at Buccaneers, nflverse game `2025_03_NYJ_TB`.
 - `nflverse_pbp_overtime.json`: 2025 Week 12, Giants at Lions, nflverse game `2025_12_NYG_DET`.
 
-The tests load these JSON rows into pandas and never call nflverse.
+The tests load these JSON rows into small table adapters and never call
+nflverse.
 
 ## nflverse schedules
 

@@ -7,7 +7,6 @@ import sys
 from types import ModuleType, SimpleNamespace
 from typing import Any
 
-import pandas as pd
 import pytest
 import requests
 
@@ -82,15 +81,6 @@ def test_loads_one_complete_season_in_source_order() -> None:
     assert result.plays[3].score is None
     assert result.plays[4].period == 5
     assert result.plays[4].score == Score(home=34, away=27)
-
-
-def test_load_plays_accepts_an_actual_pandas_dataframe() -> None:
-    result = NflversePlayClient(
-        loader=lambda seasons: pd.DataFrame(load_fixture())
-    ).load_plays(2025)
-
-    assert len(result.plays) == 5
-    assert result.plays[1].play_number == 419
 
 
 def test_default_loader_scopes_and_restores_nflreadpy_timeout(

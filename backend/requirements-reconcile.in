@@ -1,5 +1,3 @@
 boto3
 requests
 nflreadpy
-pandas
-pyarrow
