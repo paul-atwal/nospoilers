@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getAvailableSeasons,
+  getNextVisibleSeasonWeek,
   getCurrentNflSeason,
   getNextSeasonWeek,
+  getPreviousVisibleSeasonWeek,
   getPreviousSeasonWeek,
   getRankingWeeksThrough,
+  getVisibleSeasonWeeks,
   getWeekInfo,
+  isProBowlWeek,
   selectWeekAfterBootstrapRefresh,
 } from '../../utils/scheduleWeek';
 
@@ -114,5 +119,43 @@ describe('season-week navigation', () => {
     const newSource = { season: 2026, phase: 'postseason' as const, week: 1 };
     expect(selectWeekAfterBootstrapRefresh(oldSource, oldSource, newSource, false)).toEqual(newSource);
     expect(selectWeekAfterBootstrapRefresh({ ...oldSource, week: 1 }, oldSource, newSource, true)).toEqual({ ...oldSource, week: 1 });
+  });
+
+  it('derives descending seasons and omits historical preseason and Pro Bowl weeks', () => {
+    const catalogue = [
+      { season: 2024, phase: 'preseason' as const, week: 1 },
+      { season: 2024, phase: 'regular_season' as const, week: 1 },
+      { season: 2024, phase: 'postseason' as const, week: 4 },
+      { season: 2024, phase: 'postseason' as const, week: 5 },
+      { season: 2025, phase: 'preseason' as const, week: 1 },
+      { season: 2026, phase: 'preseason' as const, week: 1 },
+    ];
+
+    expect(getAvailableSeasons(catalogue, 2026)).toEqual([2026, 2025, 2024]);
+    expect(getVisibleSeasonWeeks(catalogue, 2024, 2026, catalogue[5])).toEqual([
+      catalogue[1],
+      catalogue[3],
+    ]);
+    expect(isProBowlWeek(catalogue[2])).toBe(true);
+  });
+
+  it('keeps preseason available only while the active season is in preseason', () => {
+    const catalogue = [
+      { season: 2026, phase: 'preseason' as const, week: 1 },
+      { season: 2026, phase: 'regular_season' as const, week: 1 },
+    ];
+
+    expect(getVisibleSeasonWeeks(catalogue, 2026, 2026, catalogue[0])).toEqual(catalogue);
+    expect(getVisibleSeasonWeeks(catalogue, 2026, 2026, catalogue[1])).toEqual([catalogue[1]]);
+  });
+
+  it('wraps only inside the selected season timeline', () => {
+    const timeline = [
+      { season: 2024, phase: 'regular_season' as const, week: 1 },
+      { season: 2024, phase: 'postseason' as const, week: 5 },
+    ];
+
+    expect(getPreviousVisibleSeasonWeek(timeline[0], timeline)).toEqual(timeline[1]);
+    expect(getNextVisibleSeasonWeek(timeline[1], timeline)).toEqual(timeline[0]);
   });
 });
