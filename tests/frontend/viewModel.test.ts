@@ -30,6 +30,21 @@ describe('read API compatibility view model', () => {
     expect(game.isDelayed).toBe(false);
   });
 
+  it('hides final overtime detail while preserving live overtime status', () => {
+    const finalOvertime = toViewGame({
+      ...makeApiGame('final', { home: 24, away: 17 }),
+      status: { ...makeApiGame('final', { home: 24, away: 17 }).status, detail: 'Final/OT' },
+    });
+    const liveOvertime = toViewGame({
+      ...makeApiGame('in_progress', { home: 24, away: 24 }),
+      status: { ...makeApiGame('in_progress', { home: 24, away: 24 }).status, detail: 'Overtime' },
+    });
+
+    expect(finalOvertime.status).toBe('Final');
+    expect(liveOvertime.status).toBe('Overtime');
+    expect(liveOvertime.isLive).toBe(true);
+  });
+
   it('keeps a missing final-game score nullable too', () => {
     const game = toViewGame(makeApiGame('final', null));
     expect(game.homeScore).toBeNull();

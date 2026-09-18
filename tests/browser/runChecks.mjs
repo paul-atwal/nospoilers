@@ -13,25 +13,28 @@ const setScenario = async (name) => {
 };
 const getLog = async () => (await (await fetch(`${mockUrl}/__log`)).json());
 const screenshot = (page, name) => page.screenshot({ path: new URL(name, evidenceDir).pathname, fullPage: false });
-const assertSeasonPickerCentered = async (page, viewportName) => {
+const assertSeasonPickerCentered = async (page, viewportName, expectYear = true) => {
   const [triggerBox, labelBox, yearBox, chevronBox] = await Promise.all([
     page.getByTestId('season-picker-trigger').boundingBox(),
     page.getByTestId('season-picker-label').boundingBox(),
-    page.getByTestId('season-picker-year').boundingBox(),
+    expectYear ? page.getByTestId('season-picker-year').boundingBox() : Promise.resolve(null),
     page.getByTestId('season-picker-chevron').boundingBox(),
   ]);
-  assert(triggerBox && labelBox && yearBox && chevronBox, `${viewportName} season picker geometry was not measurable`);
+  assert(triggerBox && labelBox && chevronBox, `${viewportName} season picker geometry was not measurable`);
   const triggerCenter = triggerBox.x + triggerBox.width / 2;
   const labelCenter = labelBox.x + labelBox.width / 2;
-  const yearCenter = yearBox.x + yearBox.width / 2;
   assert(
     Math.abs(triggerCenter - labelCenter) <= 3,
     `${viewportName} WEEK label was not centered in the season picker`,
   );
-  assert(
-    Math.abs(triggerCenter - yearCenter) <= 3,
-    `${viewportName} season year was not centered in the season picker`,
-  );
+  if (expectYear) {
+    assert(yearBox, `${viewportName} season year was not measurable`);
+    const yearCenter = yearBox.x + yearBox.width / 2;
+    assert(
+      Math.abs(triggerCenter - yearCenter) <= 3,
+      `${viewportName} season year was not centered in the season picker`,
+    );
+  }
   assert(
     chevronBox.x >= labelBox.x + labelBox.width - 2
       && chevronBox.x + chevronBox.width <= triggerBox.x + triggerBox.width + 1,
@@ -119,9 +122,12 @@ assert(await reveal.evaluate((element) => element.matches(':focus-visible')), 'r
 await page.keyboard.press('Enter');
 await page.getByLabel('Seahawks score 7').waitFor();
 await page.getByLabel('Seahawks score 10').waitFor({ timeout: 4000 });
+await page.getByText('Overtime', { exact: true }).waitFor({ timeout: 4000 });
 await screenshot(page, 'live-revealed-desktop.png');
 await page.getByText('7.8', { exact: true }).waitFor({ timeout: 4000 });
 await page.getByText('8.1', { exact: true }).waitFor({ timeout: 4000 });
+assert(await page.getByText('Final/OT', { exact: true }).count() === 0, 'final overtime detail leaked into the completed card');
+assert(await page.getByText('Final', { exact: true }).count() > 0, 'completed overtime game did not display Final');
 assert(await page.getByText('Confirmed rating', { exact: true }).count() === 0, 'confirmed rating caption leaked into the card');
 assert(await page.getByLabel('Seahawks score 24').isVisible(), 'revealed score did not continue updating');
 const lifecycleLog = await getLog();
@@ -172,6 +178,9 @@ await page.setViewportSize({ width: 1440, height: 900 });
 await gotoScenario(page, 'season');
 await page.getByRole('button', { name: 'Show Best of Season' }).click();
 await page.getByText('Ranked Home 1', { exact: true }).waitFor();
+assert(await page.getByTestId('season-picker-label').textContent() === '2026', 'Best of Season selector did not show only the selected year');
+assert(await page.getByTestId('season-picker-year').count() === 0, 'Best of Season selector added a replacement year subtext');
+await assertSeasonPickerCentered(page, 'Best of Season desktop', false);
 assert(await page.locator('article').count() === 10, 'Best of Season did not show exactly ten games');
 assert(await page.getByText('Ranked Home 10', { exact: true }).isVisible(), 'tenth ranked game missing');
 assert(await page.getByText('Ranked Home 11', { exact: true }).count() === 0, 'eleventh ranked game leaked into top ten');
@@ -181,6 +190,7 @@ const seasonLog = await getLog();
 assert(seasonLog.counts.season === 2, 'season did not follow full-envelope polling advice');
 await screenshot(page, 'season-desktop.png');
 await page.setViewportSize({ width: 390, height: 844 });
+await assertSeasonPickerCentered(page, 'Best of Season mobile', false);
 assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'narrow layout has horizontal overflow');
 await screenshot(page, 'season-narrow.png');
 
