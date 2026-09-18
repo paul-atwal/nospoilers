@@ -15,6 +15,10 @@ const POSTSEASON_LABELS: Readonly<Record<number, string>> = {
   5: 'Super Bowl',
 };
 
+export const isProBowlWeek = (seasonWeek: SeasonWeek): boolean => (
+  seasonWeek.phase === 'postseason' && seasonWeek.week === 4
+);
+
 const PHASE_TITLES: Readonly<Record<SeasonPhase, string>> = {
   preseason: 'Preseason',
   regular_season: 'Regular Season',
@@ -100,6 +104,53 @@ export const getNextSeasonWeek = (
   }
   return makeSeasonWeek(season + 1, 'preseason', 1);
 };
+
+export const getAvailableSeasons = (
+  knownWeeks: readonly SeasonWeek[],
+  activeSeason?: number,
+): number[] => Array.from(new Set([
+  ...knownWeeks.map((seasonWeek) => seasonWeek.season),
+  ...(activeSeason === undefined ? [] : [activeSeason]),
+])).sort((left, right) => right - left);
+
+export const getVisibleSeasonWeeks = (
+  knownWeeks: readonly SeasonWeek[],
+  season: number,
+  activeSeason: number,
+  currentWeek: SeasonWeek,
+): SeasonWeek[] => {
+  const showPreseason = season === activeSeason
+    && currentWeek.season === season
+    && currentWeek.phase === 'preseason';
+
+  return knownWeeks.filter((candidate) => (
+    candidate.season === season
+      && !isProBowlWeek(candidate)
+      && (showPreseason || candidate.phase !== 'preseason')
+  ));
+};
+
+const getCircularAdjacentSeasonWeek = (
+  seasonWeek: SeasonWeek,
+  visibleWeeks: readonly SeasonWeek[],
+  direction: -1 | 1,
+): SeasonWeek => {
+  if (visibleWeeks.length === 0) return seasonWeek;
+  const index = visibleWeeks.findIndex((candidate) => sameSeasonWeek(candidate, seasonWeek));
+  if (index < 0) return visibleWeeks[direction < 0 ? visibleWeeks.length - 1 : 0];
+  const nextIndex = (index + direction + visibleWeeks.length) % visibleWeeks.length;
+  return visibleWeeks[nextIndex];
+};
+
+export const getPreviousVisibleSeasonWeek = (
+  seasonWeek: SeasonWeek,
+  visibleWeeks: readonly SeasonWeek[],
+): SeasonWeek => getCircularAdjacentSeasonWeek(seasonWeek, visibleWeeks, -1);
+
+export const getNextVisibleSeasonWeek = (
+  seasonWeek: SeasonWeek,
+  visibleWeeks: readonly SeasonWeek[],
+): SeasonWeek => getCircularAdjacentSeasonWeek(seasonWeek, visibleWeeks, 1);
 
 export const sameSeasonWeek = (left: SeasonWeek, right: SeasonWeek): boolean => (
   left.season === right.season

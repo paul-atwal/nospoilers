@@ -86,7 +86,12 @@ describe('read API compatibility view model', () => {
 
   it('keeps API ranking order while excluding preseason/upcoming/unrated games and capping at ten', () => {
     const eligible = Array.from({ length: 12 }, (_, index) => ({ ...makeApiGame('final', { home: index, away: 0 }), id: `eligible-${index}`, seasonWeek: { season: 2026, phase: 'regular_season' as const, week: index + 1 }, rating: { ...makeApiGame('final', { home: 0, away: 0 }).rating, state: 'confirmed' as const, score: 9 - index / 10 } }));
-    const result = selectBestSeasonGames([{ ...eligible[0], id: 'preseason', seasonWeek: { season: 2026, phase: 'preseason', week: 1 } }, ...eligible, { ...eligible[0], id: 'upcoming', status: { ...eligible[0].status, state: 'scheduled' } }]);
+    const result = selectBestSeasonGames([
+      { ...eligible[0], id: 'preseason', seasonWeek: { season: 2026, phase: 'preseason', week: 1 } },
+      { ...eligible[0], id: 'pro-bowl', seasonWeek: { season: 2026, phase: 'postseason', week: 4 } },
+      ...eligible,
+      { ...eligible[0], id: 'upcoming', status: { ...eligible[0].status, state: 'scheduled' } },
+    ], 2026);
     expect(result).toHaveLength(10);
     expect(result[0].id).toBe('eligible-0');
     expect(result.at(-1)?.id).toBe('eligible-9');

@@ -6,7 +6,18 @@ let counts = new Map();
 let requests = [];
 
 const week = (number, phase = 'regular_season', season = 2026) => ({ season, phase, week: number });
-const knownWeeks = [week(1, 'preseason', 2020), week(5, 'preseason', 2020), week(17, 'regular_season', 2020), week(1), week(2), week(1, 'postseason')];
+const knownWeeks = [
+  week(1, 'preseason', 2020),
+  week(5, 'preseason', 2020),
+  week(17, 'regular_season', 2020),
+  week(5, 'postseason', 2020),
+  week(1, 'regular_season', 2024),
+  week(5, 'postseason', 2024),
+  week(1, 'regular_season', 2025),
+  week(1),
+  week(2),
+  week(1, 'postseason'),
+];
 const record = (wins, losses, ties = 0) => ({ wins, losses, ties, scope: 'regular_season', snapshotAt: '2026-09-10T00:00:00Z' });
 const team = (id, displayName, abbreviation, pregameRecord = record(0, 0), postgameRecord = null) => ({ id, displayName, abbreviation, logoKey: id, pregameRecord, postgameRecord });
 const rating = (state = 'pending', score = null, confirmationSupported = true) => ({
@@ -63,10 +74,10 @@ const lifecycleWeek = (step) => {
   return { etag: '"life-6"', body: envelope([game({ state: 'final', detail: 'Final', score: { home: 24, away: 17 }, odds: null, gameRating: rating('confirmed', 8.1) })], null) };
 };
 
-const seasonGames = () => {
+const seasonGames = (season = 2026) => {
   const eligible = Array.from({ length: 12 }, (_, index) => game({
     id: `ranked-${index + 1}`,
-    seasonWeek: index === 11 ? week(1, 'postseason') : week(Math.min(index + 1, 18)),
+    seasonWeek: index === 11 ? week(1, 'postseason', season) : week(Math.min(index + 1, 18), 'regular_season', season),
     home: team(`ranked-home-${index + 1}`, `Ranked Home ${index + 1}`, 'SEA', record(8, 2), record(9, 2)),
     away: team(`ranked-away-${index + 1}`, `Ranked Away ${index + 1}`, 'NE', record(7, 3), record(7, 4)),
     state: 'final', detail: 'Final', score: { home: 24, away: 17 }, odds: null,
@@ -74,9 +85,10 @@ const seasonGames = () => {
   }));
   return [
     ...eligible,
-    game({ id: 'preseason-high', seasonWeek: week(1, 'preseason'), state: 'final', detail: 'Final', score: { home: 30, away: 20 }, gameRating: rating('confirmed', 10), odds: null }),
-    game({ id: 'upcoming-rated', state: 'scheduled', gameRating: rating('confirmed', 9.95) }),
-    game({ id: 'final-pending', state: 'final', detail: 'Final', score: { home: 17, away: 14 }, gameRating: rating('pending', null), odds: null }),
+    game({ id: `preseason-high-${season}`, seasonWeek: week(1, 'preseason', season), state: 'final', detail: 'Final', score: { home: 30, away: 20 }, gameRating: rating('confirmed', 10), odds: null }),
+    game({ id: `upcoming-rated-${season}`, seasonWeek: week(18, 'regular_season', season), state: 'scheduled', gameRating: rating('confirmed', 9.95) }),
+    game({ id: `final-pending-${season}`, seasonWeek: week(18, 'regular_season', season), state: 'final', detail: 'Final', score: { home: 17, away: 14 }, gameRating: rating('pending', null), odds: null }),
+    game({ id: `pro-bowl-${season}`, seasonWeek: week(4, 'postseason', season), home: team(`pro-bowl-home-${season}`, 'Pro Bowl Home', 'PBH', record(0, 0)), away: team(`pro-bowl-away-${season}`, 'Pro Bowl Away', 'PBA', record(0, 0)), state: 'final', detail: 'Final', score: { home: 30, away: 20 }, gameRating: rating('confirmed', 10.5), odds: null }),
   ];
 };
 
@@ -98,9 +110,11 @@ const server = http.createServer((request, response) => {
     return reply(request, response, 200, bootstrap(null), { ETag: '"bootstrap-1"' });
   }
 
-  if (url.pathname === '/api/v1/seasons/2026') {
+  const seasonMatch = url.pathname.match(/^\/api\/v1\/seasons\/(\d+)$/);
+  if (seasonMatch) {
     const step = count('season');
-    return reply(request, response, 200, { season: 2026, snapshotAsOf: '2026-09-11T04:00:00Z', pollAfterSeconds: step === 1 ? 1 : null, games: seasonGames() }, { ETag: `"season-${step}"` });
+    const selectedSeason = Number(seasonMatch[1]);
+    return reply(request, response, 200, { season: selectedSeason, snapshotAsOf: '2026-09-11T04:00:00Z', pollAfterSeconds: step === 1 ? 1 : null, games: seasonGames(selectedSeason) }, { ETag: `"season-${step}"` });
   }
 
   const match = url.pathname.match(/^\/api\/v1\/weeks\/(\d+)\/([^/]+)\/(\d+)$/);

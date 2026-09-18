@@ -13,11 +13,13 @@ import { getViewerTimeZone, toViewGame } from './services/gameViewModel';
 import { ReadApiClient, type ReadApiResponse } from './services/readApi';
 import { createRequestOwner, type RequestOwner } from './services/requestLifecycle';
 import {
-  getNextSeasonWeek,
-  getPreviousSeasonWeek,
+  getAvailableSeasons,
+  getNextVisibleSeasonWeek,
+  getPreviousVisibleSeasonWeek,
   getWeekInfo,
-  isFirstKnownWeek,
-  isLastKnownWeek,
+  getVisibleSeasonWeeks,
+  isProBowlWeek,
+  sameSeasonWeek,
   selectWeekAfterBootstrapRefresh,
 } from './utils/scheduleWeek';
 
@@ -25,8 +27,14 @@ export { toViewGame } from './services/gameViewModel';
 
 export const selectBestSeasonGames = (
   games: readonly ApiGame[],
+  season?: number,
 ): readonly ApiGame[] => games
-  .filter((game) => game.seasonWeek.phase !== 'preseason' && game.status.state === 'final')
+  .filter((game) => (
+    (season === undefined || game.seasonWeek.season === season)
+      && game.seasonWeek.phase !== 'preseason'
+      && !isProBowlWeek(game.seasonWeek)
+      && game.status.state === 'final'
+  ))
   .filter((game) => (
     game.rating.state === 'confirmed' || game.rating.state === 'provisional'
   ) && game.rating.score !== null)
@@ -49,8 +57,11 @@ const App: React.FC = () => {
   const seasonOwner = useRef<RequestOwner>(createRequestOwner());
   const selectedWasChanged = useRef(false);
   const sourceCurrentWeekRef = useRef<SeasonWeek | null>(null);
+  const selectedSeasonRef = useRef<number | null>(null);
+  const selectedWeekRef = useRef<SeasonWeek | null>(null);
 
   const [bootstrap, setBootstrap] = useState<BootstrapResponse | null>(null);
+  const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const [selectedWeek, setSelectedWeek] = useState<SeasonWeek | null>(null);
   const [bootstrapLoading, setBootstrapLoading] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
@@ -74,13 +85,43 @@ const App: React.FC = () => {
       onLoading: setBootstrapLoading,
       onData: (response: ReadApiResponse<BootstrapResponse>) => {
         const previousSourceCurrentWeek = sourceCurrentWeekRef.current;
-        setBootstrap(response.body);
-        setSelectedWeek((previous) => selectWeekAfterBootstrapRefresh(
-          previous,
-          previousSourceCurrentWeek,
+        const requestedSeason = selectedWasChanged.current
+          ? (selectedSeasonRef.current ?? response.body.activeSeason)
+          : response.body.activeSeason;
+        const requestedVisibleWeeks = getVisibleSeasonWeeks(
+          response.body.knownWeeks,
+          requestedSeason,
+          response.body.activeSeason,
           response.body.currentWeek,
-          selectedWasChanged.current,
-        ));
+        );
+        const nextSeason = requestedVisibleWeeks.length > 0
+          ? requestedSeason
+          : response.body.activeSeason;
+        const visibleWeeks = requestedVisibleWeeks.length > 0
+          ? requestedVisibleWeeks
+          : getVisibleSeasonWeeks(
+            response.body.knownWeeks,
+            nextSeason,
+            response.body.activeSeason,
+            response.body.currentWeek,
+          );
+        const refreshedSelection = selectedWeekRef.current
+          && selectedWeekRef.current.season === nextSeason
+          ? selectWeekAfterBootstrapRefresh(
+            selectedWeekRef.current,
+            previousSourceCurrentWeek,
+            response.body.currentWeek,
+            selectedWasChanged.current,
+          )
+          : response.body.currentWeek;
+        const nextWeek = visibleWeeks.find((candidate) => (
+          refreshedSelection && sameSeasonWeek(candidate, refreshedSelection)
+        )) ?? visibleWeeks[0] ?? response.body.currentWeek;
+        setBootstrap(response.body);
+        setSelectedSeason(nextSeason);
+        setSelectedWeek(nextWeek);
+        selectedSeasonRef.current = nextSeason;
+        selectedWeekRef.current = nextWeek;
         sourceCurrentWeekRef.current = response.body.currentWeek;
         setBootstrapError(null);
       },
@@ -126,7 +167,12 @@ const App: React.FC = () => {
       return;
     }
 
-    const season = bootstrap.activeSeason;
+    if (selectedSeason === null) {
+      owner.cancel();
+      return;
+    }
+
+    const season = selectedSeason;
     const cached = apiRef.current!.getCachedSeasonSnapshot(season);
     if (cached) {
       setSeasonSnapshots((previous) => ({ ...previous, [season]: cached.body }));
@@ -145,7 +191,7 @@ const App: React.FC = () => {
       ),
     });
     return () => owner.cancel();
-  }, [bootstrap?.activeSeason, viewMode]);
+  }, [selectedSeason, viewMode]);
 
   useEffect(() => {
     let queued = false;
@@ -179,16 +225,33 @@ const App: React.FC = () => {
 
   const currentWeek = selectedWeek ? getWeekInfo(selectedWeek) : null;
   const sourceCurrentWeek = bootstrap ? getWeekInfo(bootstrap.currentWeek) : null;
-  const knownWeeks = bootstrap?.knownWeeks ?? [];
   const selectedWeekKey = weekKey(selectedWeek);
   const weeklySnapshot = selectedWeekKey
     ? weeklySnapshots[selectedWeekKey] ?? null
     : null;
-  const seasonSnapshot = bootstrap
-    ? seasonSnapshots[bootstrap.activeSeason] ?? null
-    : null;
+  const seasonSnapshot = selectedSeason === null
+    ? null
+    : seasonSnapshots[selectedSeason] ?? null;
+  const availableSeasons = bootstrap
+    ? getAvailableSeasons(bootstrap.knownWeeks, bootstrap.activeSeason).filter((season) => (
+      getVisibleSeasonWeeks(
+        bootstrap.knownWeeks,
+        season,
+        bootstrap.activeSeason,
+        bootstrap.currentWeek,
+      ).length > 0
+    ))
+    : [];
+  const visibleSeasonWeeks = bootstrap && selectedSeason !== null
+    ? getVisibleSeasonWeeks(
+      bootstrap.knownWeeks,
+      selectedSeason,
+      bootstrap.activeSeason,
+      bootstrap.currentWeek,
+    )
+    : [];
   const displayedGames = viewMode === 'season'
-    ? selectBestSeasonGames(seasonSnapshot?.games ?? []).map((game) => toViewGame(game, viewerTimeZone))
+    ? selectBestSeasonGames(seasonSnapshot?.games ?? [], selectedSeason ?? undefined).map((game) => toViewGame(game, viewerTimeZone))
     : (weeklySnapshot?.games ?? []).map((game) => toViewGame(game, viewerTimeZone));
   const loading = viewMode === 'season' ? seasonLoading : weeklyLoading;
   const error = viewMode === 'season' ? seasonError : weeklyError;
@@ -198,20 +261,35 @@ const App: React.FC = () => {
 
   const handlePreviousWeek = () => {
     if (!selectedWeek) return;
-    const previous = getPreviousSeasonWeek(selectedWeek, knownWeeks);
-    if (weekKey(previous) !== weekKey(selectedWeek)) {
-      selectedWasChanged.current = true;
-      setSelectedWeek(previous);
-    }
+    const previous = getPreviousVisibleSeasonWeek(selectedWeek, visibleSeasonWeeks);
+    selectedWasChanged.current = true;
+    selectedWeekRef.current = previous;
+    setSelectedWeek(previous);
   };
 
   const handleNextWeek = () => {
     if (!selectedWeek) return;
-    const next = getNextSeasonWeek(selectedWeek, knownWeeks);
-    if (weekKey(next) !== weekKey(selectedWeek)) {
-      selectedWasChanged.current = true;
-      setSelectedWeek(next);
-    }
+    const next = getNextVisibleSeasonWeek(selectedWeek, visibleSeasonWeeks);
+    selectedWasChanged.current = true;
+    selectedWeekRef.current = next;
+    setSelectedWeek(next);
+  };
+
+  const handleSeasonChange = (season: number) => {
+    if (!bootstrap || season === selectedSeason) return;
+    const nextVisibleWeeks = getVisibleSeasonWeeks(
+      bootstrap.knownWeeks,
+      season,
+      bootstrap.activeSeason,
+      bootstrap.currentWeek,
+    );
+    const nextWeek = nextVisibleWeeks[0] ?? null;
+    if (!nextWeek) return;
+    selectedWasChanged.current = true;
+    selectedSeasonRef.current = season;
+    selectedWeekRef.current = nextWeek;
+    setSelectedSeason(season);
+    setSelectedWeek(nextWeek);
   };
 
   if (bootstrapLoading && !bootstrap && !bootstrapError) {
@@ -241,17 +319,19 @@ const App: React.FC = () => {
     );
   }
 
-  if (!currentWeek || !bootstrap || !sourceCurrentWeek) return null;
+  if (!currentWeek || !bootstrap || !sourceCurrentWeek || selectedSeason === null) return null;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#121212] text-white font-sans">
       <Header
         currentWeek={currentWeek}
-        currentSeasonLabel={sourceCurrentWeek.seasonLabel}
+        selectedSeason={selectedSeason}
+        availableSeasons={availableSeasons}
+        onSeasonChange={handleSeasonChange}
         onPreviousWeek={handlePreviousWeek}
         onNextWeek={handleNextWeek}
-        previousDisabled={isFirstKnownWeek(selectedWeek, knownWeeks)}
-        nextDisabled={isLastKnownWeek(selectedWeek, knownWeeks)}
+        previousDisabled={visibleSeasonWeeks.length <= 1}
+        nextDisabled={visibleSeasonWeeks.length <= 1}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
       />
@@ -349,15 +429,6 @@ const App: React.FC = () => {
               ))
             )}
           </div>
-        )}
-        {viewMode === 'weekly' && (
-          isFirstKnownWeek(selectedWeek, knownWeeks) || isLastKnownWeek(selectedWeek, knownWeeks)
-        ) && (
-          <span className="sr-only">
-            {isFirstKnownWeek(selectedWeek, knownWeeks)
-              ? 'At first known week.'
-              : 'At last known week.'}
-          </span>
         )}
       </main>
     </div>
