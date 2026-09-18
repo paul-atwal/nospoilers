@@ -44,6 +44,8 @@ describe('Header catalogue navigation', () => {
     rerender(<Header {...props} viewMode="season" />);
     const showWeekly = screen.getByRole('button', { name: 'Return to weekly games' });
     expect(showWeekly.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('season-picker-label').textContent).toBe('2026');
+    expect(screen.queryByTestId('season-picker-year')).toBeNull();
     fireEvent.click(showWeekly);
     expect(onViewModeChange).toHaveBeenLastCalledWith('weekly');
   });

@@ -69,8 +69,8 @@ const lifecycleWeek = (step) => {
   if (step === 1) return { etag: '"life-1"', body: envelope([game()], 1) };
   if (step === 5) return { etag: '"life-2"', body: envelope([game({ state: 'delayed', detail: 'Weather delay', odds: null })], 1) };
   if (step === 6) return { etag: '"life-3"', body: envelope([game({ state: 'in_progress', detail: '1st Quarter', period: 1, clock: '08:14', score: { home: 7, away: 3 }, odds: null })], 1) };
-  if (step === 7) return { etag: '"life-4"', body: envelope([game({ state: 'in_progress', detail: '2nd Quarter', period: 2, clock: '04:02', score: { home: 10, away: 3 }, odds: null })], 1) };
-  if (step === 8) return { etag: '"life-5"', body: envelope([game({ state: 'final', detail: 'Final', score: { home: 24, away: 17 }, odds: null, gameRating: rating('provisional', 7.8) })], 1) };
+  if (step === 7) return { etag: '"life-4"', body: envelope([game({ state: 'in_progress', detail: 'Overtime', period: 5, clock: '04:02', score: { home: 10, away: 3 }, odds: null })], 1) };
+  if (step === 8) return { etag: '"life-5"', body: envelope([game({ state: 'final', detail: 'Final/OT', score: { home: 24, away: 17 }, odds: null, gameRating: rating('provisional', 7.8) })], 1) };
   return { etag: '"life-6"', body: envelope([game({ state: 'final', detail: 'Final', score: { home: 24, away: 17 }, odds: null, gameRating: rating('confirmed', 8.1) })], null) };
 };
 

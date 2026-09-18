@@ -21,6 +21,7 @@ interface SeasonPickerProps {
   availableSeasons: readonly number[];
   onSeasonChange: (season: number) => void;
   highlighted?: boolean;
+  showYear?: boolean;
 }
 
 const SeasonPicker: React.FC<SeasonPickerProps> = ({
@@ -29,6 +30,7 @@ const SeasonPicker: React.FC<SeasonPickerProps> = ({
   availableSeasons,
   onSeasonChange,
   highlighted = false,
+  showYear = true,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -98,9 +100,11 @@ const SeasonPicker: React.FC<SeasonPickerProps> = ({
           <span data-testid="season-picker-label" className="max-w-[calc(100%-1.5rem)] truncate text-center">{currentWeekLabel}</span>
           <ChevronDown data-testid="season-picker-chevron" className={`pointer-events-none absolute right-0 h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} />
         </span>
-        <span data-testid="season-picker-year" className={`text-[10px] font-medium uppercase ${highlighted ? 'text-yellow-400' : 'text-blue-400'}`}>
-          {selectedSeason}
-        </span>
+        {showYear && (
+          <span data-testid="season-picker-year" className={`text-[10px] font-medium uppercase ${highlighted ? 'text-yellow-400' : 'text-blue-400'}`}>
+            {selectedSeason}
+          </span>
+        )}
       </button>
 
       {open && (
@@ -231,11 +235,12 @@ const Header: React.FC<HeaderProps> = ({
       ) : (
         <div className="mt-3 flex items-center justify-center bg-yellow-900/20 rounded-lg border border-yellow-500/20 p-1">
           <SeasonPicker
-            currentWeekLabel="Best of Season"
+            currentWeekLabel={String(selectedSeason)}
             selectedSeason={selectedSeason}
             availableSeasons={availableSeasons}
             onSeasonChange={onSeasonChange}
             highlighted
+            showYear={false}
           />
         </div>
       )}

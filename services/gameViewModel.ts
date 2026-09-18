@@ -76,7 +76,8 @@ export const toViewGame = (apiGame: ApiGame, timeZone = getViewerTimeZone()): Ga
     awayScore: hasScore ? score.away : null,
     homeRecord: home.records,
     awayRecord: away.records,
-    status: apiGame.status.detail ?? STATUS_LABELS[apiGame.status.state],
+    // Completed overtime is intentionally not exposed: the detail is a spoiler.
+    status: apiGame.status.state === 'final' ? STATUS_LABELS.final : (apiGame.status.detail ?? STATUS_LABELS[apiGame.status.state]),
     kickoffTime: kickoff.time,
     dayOfWeek: kickoff.day,
     dateLabel: kickoff.date,
