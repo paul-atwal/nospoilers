@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 import pytest
 
 from backend.nospoil_nfl.game.models import SeasonPhase, Score, SeasonWeek
@@ -131,16 +130,6 @@ def test_load_schedule_accepts_a_pandas_like_table() -> None:
     ).load_schedule(2024)
 
     assert len(result.games) == 4
-
-
-def test_load_schedule_accepts_an_actual_pandas_dataframe() -> None:
-    result = NflverseScheduleClient(
-        loader=lambda seasons: pd.DataFrame(load_fixture())
-    ).load_schedule(2024)
-
-    assert len(result.games) == 4
-    assert result.games[1].season_week.week == 2
-    assert result.games[1].final_score == Score(home=23, away=14)
 
 
 def test_rejects_table_conversion_failure_as_provider_data_error() -> None:

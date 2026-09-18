@@ -60,12 +60,8 @@ mangum==0.22.0
     #   -r requirements-read.in
 nflreadpy==0.1.5
     # via -r requirements-reconcile.in
-numpy==2.4.6
-    # via pandas
 packaging==26.3
     # via pytest
-pandas==3.0.5
-    # via -r requirements-reconcile.in
 platformdirs==4.11.7
     # via nflreadpy
 pluggy==1.6.0
@@ -74,8 +70,6 @@ polars==1.44.1
     # via nflreadpy
 polars-runtime-32==1.44.1
     # via polars
-pyarrow==25.0.1
-    # via -r requirements-reconcile.in
 pydantic==2.13.5
     # via
     #   fastapi
@@ -90,9 +84,7 @@ pygments==2.21.0
 pytest==9.1.1
     # via -r requirements-dev.in
 python-dateutil==2.9.0.post0
-    # via
-    #   botocore
-    #   pandas
+    # via botocore
 python-dotenv==1.2.3
     # via
     #   pydantic-settings
