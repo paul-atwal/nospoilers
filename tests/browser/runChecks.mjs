@@ -13,6 +13,31 @@ const setScenario = async (name) => {
 };
 const getLog = async () => (await (await fetch(`${mockUrl}/__log`)).json());
 const screenshot = (page, name) => page.screenshot({ path: new URL(name, evidenceDir).pathname, fullPage: false });
+const assertSeasonPickerCentered = async (page, viewportName) => {
+  const [triggerBox, labelBox, yearBox, chevronBox] = await Promise.all([
+    page.getByTestId('season-picker-trigger').boundingBox(),
+    page.getByTestId('season-picker-label').boundingBox(),
+    page.getByTestId('season-picker-year').boundingBox(),
+    page.getByTestId('season-picker-chevron').boundingBox(),
+  ]);
+  assert(triggerBox && labelBox && yearBox && chevronBox, `${viewportName} season picker geometry was not measurable`);
+  const triggerCenter = triggerBox.x + triggerBox.width / 2;
+  const labelCenter = labelBox.x + labelBox.width / 2;
+  const yearCenter = yearBox.x + yearBox.width / 2;
+  assert(
+    Math.abs(triggerCenter - labelCenter) <= 3,
+    `${viewportName} WEEK label was not centered in the season picker`,
+  );
+  assert(
+    Math.abs(triggerCenter - yearCenter) <= 3,
+    `${viewportName} season year was not centered in the season picker`,
+  );
+  assert(
+    chevronBox.x >= labelBox.x + labelBox.width - 2
+      && chevronBox.x + chevronBox.width <= triggerBox.x + triggerBox.width + 1,
+    `${viewportName} season chevron escaped the centered trigger`,
+  );
+};
 const gotoScenario = async (page, name) => {
   await setScenario(name);
   await page.goto(`${appUrl}/?scenario=${name}&run=${Date.now()}`, { waitUntil: 'domcontentloaded' });
@@ -159,7 +184,9 @@ await page.setViewportSize({ width: 390, height: 844 });
 assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'narrow layout has horizontal overflow');
 await screenshot(page, 'season-narrow.png');
 
+await page.setViewportSize({ width: 1440, height: 900 });
 await gotoScenario(page, 'season-explorer');
+await assertSeasonPickerCentered(page, 'desktop');
 const seasonPicker = page.getByRole('button', { name: 'Select season, currently 2026' });
 await seasonPicker.click();
 await page.getByRole('option', { name: '2024' }).click();
@@ -186,6 +213,7 @@ const historicalLog = await getLog();
 assert(historicalLog.requests.some((entry) => entry.path === '/api/v1/weeks/2020/regular_season/17'), 'historical season did not start at regular-season Week 17');
 assert(!historicalLog.requests.some((entry) => entry.path.includes('/weeks/2020/preseason/')), 'historical preseason remained reachable');
 await page.setViewportSize({ width: 390, height: 844 });
+await assertSeasonPickerCentered(page, 'mobile');
 await page.getByRole('button', { name: 'Select season, currently 2020' }).click();
 assert(await page.getByRole('option', { name: '2026' }).isVisible(), 'mobile season menu omitted 2026');
 assert(await page.getByRole('option', { name: '2025' }).isVisible(), 'mobile season menu omitted 2025');

@@ -78,6 +78,7 @@ const SeasonPicker: React.FC<SeasonPickerProps> = ({
       <button
         ref={triggerRef}
         type="button"
+        data-testid="season-picker-trigger"
         aria-label={`Select season, currently ${selectedSeason}`}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -91,13 +92,13 @@ const SeasonPicker: React.FC<SeasonPickerProps> = ({
             openAndFocus(availableSeasons.length - 1);
           }
         }}
-        className={`flex min-w-0 flex-col items-center rounded-md px-3 py-1.5 transition-colors hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 ${highlighted ? 'text-yellow-400' : 'text-white'}`}
+        className={`relative flex min-w-36 flex-col items-center rounded-md px-3 py-1.5 transition-colors hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 ${highlighted ? 'text-yellow-400' : 'text-white'}`}
       >
-        <span className="flex max-w-full items-center gap-1 font-bold tracking-wide uppercase text-xs">
-          <span className="truncate">{currentWeekLabel}</span>
-          <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <span className="relative flex w-full items-center justify-center font-bold tracking-wide uppercase text-xs">
+          <span data-testid="season-picker-label" className="max-w-[calc(100%-1.5rem)] truncate text-center">{currentWeekLabel}</span>
+          <ChevronDown data-testid="season-picker-chevron" className={`pointer-events-none absolute right-0 h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} />
         </span>
-        <span className={`text-[10px] font-medium uppercase ${highlighted ? 'text-yellow-400' : 'text-blue-400'}`}>
+        <span data-testid="season-picker-year" className={`text-[10px] font-medium uppercase ${highlighted ? 'text-yellow-400' : 'text-blue-400'}`}>
           {selectedSeason}
         </span>
       </button>
