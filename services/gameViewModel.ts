@@ -76,7 +76,7 @@ export const toViewGame = (apiGame: ApiGame, timeZone = getViewerTimeZone()): Ga
     awayScore: hasScore ? score.away : null,
     homeRecord: home.records,
     awayRecord: away.records,
-    // Completed overtime is intentionally not exposed: the detail is a spoiler.
+    // Completed overtime stays hidden until the score is revealed.
     status: apiGame.status.state === 'final' ? STATUS_LABELS.final : (apiGame.status.detail ?? STATUS_LABELS[apiGame.status.state]),
     kickoffTime: kickoff.time,
     dayOfWeek: kickoff.day,
@@ -88,7 +88,14 @@ export const toViewGame = (apiGame: ApiGame, timeZone = getViewerTimeZone()): Ga
     rating,
     excitementScore: rating.score,
     isEstimated: rating.state === 'provisional',
-    spoilerData: { homeScore: hasScore ? score.home : null, awayScore: hasScore ? score.away : null, summary: '' },
+    spoilerData: {
+      homeScore: hasScore ? score.home : null,
+      awayScore: hasScore ? score.away : null,
+      summary: '',
+      status: apiGame.status.state === 'final'
+        ? apiGame.status.detail ?? STATUS_LABELS.final
+        : undefined,
+    },
     broadcaster: apiGame.broadcaster ?? undefined,
     isUpcoming,
     isScheduled: apiGame.status.state === 'scheduled',

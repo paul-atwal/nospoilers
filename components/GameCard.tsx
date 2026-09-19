@@ -51,6 +51,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
   const scoreAvailable = game.homeScore !== null && game.awayScore !== null;
   const canReveal = scoreAvailable && !game.isUpcoming;
   const revealActive = revealedGameId === game.id && isRevealed;
+  const status = revealActive ? game.spoilerData.status ?? game.status : game.status;
   const score = rating.score;
   const isScheduled = game.isScheduled ?? game.isUpcoming;
   const colorClasses = score === null
@@ -156,7 +157,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
               </span>
             )}
             <span className={game.isLive ? 'text-red-400' : ''}>
-              {isScheduled ? game.dateLabel || 'Date TBD' : game.status}
+              {isScheduled ? game.dateLabel || 'Date TBD' : status}
             </span>
             <span className="text-neutral-600">•</span>
             {showWeekContext ? (
