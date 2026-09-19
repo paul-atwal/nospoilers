@@ -67,6 +67,31 @@ describe('GameCard scores', () => {
     expect(screen.getByText('27')).not.toBeNull();
     expect(screen.getByText('20')).not.toBeNull();
   });
+
+  it('reveals a completed overtime status only with the score', () => {
+    render(<GameCard game={makeGame({
+      status: 'Final',
+      spoilerData: {
+        homeScore: 24,
+        awayScore: 17,
+        summary: 'Away Team 17 @ Home Team 24',
+        status: 'Final/OT',
+      },
+    })} />);
+
+    expect(screen.getByText('Final')).not.toBeNull();
+    expect(screen.queryByText('Final/OT')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Reveal score.*Away Team.*Home Team/i }));
+
+    expect(screen.queryByText('Final')).toBeNull();
+    expect(screen.getByText('Final/OT')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Hide score.*Away Team.*Home Team/i }));
+
+    expect(screen.getByText('Final')).not.toBeNull();
+    expect(screen.queryByText('Final/OT')).toBeNull();
+  });
 });
 
 describe('GameCard records', () => {

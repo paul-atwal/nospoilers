@@ -3,6 +3,7 @@ export interface GameSpoilerData {
   homeScore: string | number | null;
   awayScore: string | number | null;
   summary: string;
+  status?: string;
 }
 
 export type SeasonPhase = 'preseason' | 'regular_season' | 'postseason';

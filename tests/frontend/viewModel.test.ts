@@ -41,6 +41,7 @@ describe('read API compatibility view model', () => {
     });
 
     expect(finalOvertime.status).toBe('Final');
+    expect(finalOvertime.spoilerData.status).toBe('Final/OT');
     expect(liveOvertime.status).toBe('Overtime');
     expect(liveOvertime.isLive).toBe(true);
   });
