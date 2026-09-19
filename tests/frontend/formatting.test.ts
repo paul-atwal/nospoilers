@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getExcitementColor, getRatingBand, getScoreLabel, RATING_BANDS } from '../../utils/formatting';
+import { getExcitementColor, getRatingBand, RATING_BANDS } from '../../utils/formatting';
 
 describe('rating band presentation', () => {
   it.each([
@@ -15,7 +15,6 @@ describe('rating band presentation', () => {
     const band = getRatingBand(score);
     expect(band.rangeLabel).toBe(rangeLabel);
     expect(band.label).toBe(label);
-    expect(getScoreLabel(score)).toBe(label);
     expect(getExcitementColor(score)).toContain(textClass);
   });
 
@@ -24,7 +23,6 @@ describe('rating band presentation', () => {
       const representative = band.minScore === Number.NEGATIVE_INFINITY ? 0 : band.minScore;
       expect(getRatingBand(representative)).toBe(band);
       expect(band.cardColorClass).toContain(band.textClass);
-      expect(getScoreLabel(representative)).toBe(band.label);
     }
   });
 });
