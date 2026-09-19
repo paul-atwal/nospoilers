@@ -55,11 +55,13 @@ describe('App bootstrap rollover selection ownership', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Rating Info' }));
 
-    expect(screen.getByText(/play-by-play data from 2,600\+ games/)).toBeTruthy();
+    expect(screen.getByText(/Ratings are calculated using play-by-play data/)).toBeTruthy();
     expect(screen.getByText(/Game Volatility \(Primary\)/)).toBeTruthy();
     expect(screen.getByText(/Comeback Factor \(Bonus\)/)).toBeTruthy();
     expect(screen.getByText('Score Guide')).toBeTruthy();
-    expect(screen.getByText(/Must Watch \(Top 5%\)/)).toBeTruthy();
+    expect(screen.getByText('8.5+').parentElement?.textContent).toContain('Must Watch');
+    expect(screen.getByText('7.0+').parentElement?.textContent).toContain('Thriller');
+    expect(screen.queryByText(/Top (5|15|20)%/)).toBeNull();
     expect(screen.getByText(/Skip It/)).toBeTruthy();
   });
 
