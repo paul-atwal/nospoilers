@@ -49,8 +49,6 @@ export const getRatingBand = (score: number): RatingBand => (
 
 export const getExcitementColor = (score: number) => getRatingBand(score).cardColorClass;
 
-export const getScoreLabel = (score: number) => getRatingBand(score).label;
-
 export const formatDateDisplay = (date: Date) => {
     return new Intl.DateTimeFormat('en-US', { 
         weekday: 'long', 
