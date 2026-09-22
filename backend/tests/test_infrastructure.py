@@ -41,7 +41,9 @@ class InfrastructureContractTest(unittest.TestCase):
             properties["TableName"]["Fn::Sub"], "nospoil-${Environment}-games"
         )
         self.assertEqual(properties["BillingMode"], "PAY_PER_REQUEST")
-        self.assertEqual(properties["SSESpecification"], {"SSEEnabled": True})
+        # False selects DynamoDB's encrypted, no-cost AWS-owned key. True uses
+        # the account's aws/dynamodb KMS key and incurs KMS request usage.
+        self.assertEqual(properties["SSESpecification"], {"SSEEnabled": False})
         self.assertEqual(table["DeletionPolicy"], "RetainExceptOnCreate")
         self.assertEqual(table["UpdateReplacePolicy"], "Retain")
         self.assertEqual(
