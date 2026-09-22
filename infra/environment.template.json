@@ -60,7 +60,7 @@
         },
         "BillingMode": "PAY_PER_REQUEST",
         "SSESpecification": {
-          "SSEEnabled": true
+          "SSEEnabled": false
         },
         "AttributeDefinitions": [
           {
