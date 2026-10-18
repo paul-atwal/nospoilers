@@ -370,6 +370,10 @@ class InfrastructureContractTest(unittest.TestCase):
     ) -> None:
         script = (ROOT / "infra/deploy.sh").read_text()
         self.assertIn(
+            'NOSPOIL_SCHEDULE_STATE="$(current_parameter "$environment_stack" ScheduleState)"',
+            script,
+        )
+        self.assertIn(
             'NOSPOIL_SCHEDULE_STATE="${NOSPOIL_SCHEDULE_STATE:-DISABLED}"', script
         )
         self.assertIn("--no-fail-on-empty-changeset", script)

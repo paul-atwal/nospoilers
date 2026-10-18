@@ -7,15 +7,46 @@ if [[ "$environment" != "staging" && "$environment" != "production" ]]; then
   exit 2
 fi
 
-AWS_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-}}"
+AWS_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-$(aws configure get region 2>/dev/null || true)}}"
 NOSPOIL_FRONTEND_ORIGIN="${NOSPOIL_FRONTEND_ORIGIN:-}"
 NOSPOIL_ALERT_EMAIL="${NOSPOIL_ALERT_EMAIL:-}"
 GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-paul-atwal/nospoilers}"
 NOSPOIL_ACTIVE_SEASON="${NOSPOIL_ACTIVE_SEASON:-2026}"
-NOSPOIL_SCHEDULE_STATE="${NOSPOIL_SCHEDULE_STATE:-DISABLED}"
+NOSPOIL_SCHEDULE_STATE="${NOSPOIL_SCHEDULE_STATE:-}"
 NOSPOIL_MONTHLY_BUDGET_USD="${NOSPOIL_MONTHLY_BUDGET_USD:-5}"
 
 [[ -n "$AWS_REGION" ]] || { echo "AWS_REGION is required" >&2; exit 2; }
+
+aws sts get-caller-identity >/dev/null || {
+  echo "AWS credentials are required" >&2
+  exit 2
+}
+
+foundation_stack="nospoil-foundation"
+environment_stack="nospoil-${environment}"
+
+# Prints a deployed stack parameter, or nothing when the stack or key is absent.
+current_parameter() {
+  local value
+  value="$(aws cloudformation describe-stacks \
+    --region "$AWS_REGION" \
+    --stack-name "$1" \
+    --query "Stacks[0].Parameters[?ParameterKey=='$2'].ParameterValue | [0]" \
+    --output text 2>/dev/null || true)"
+  [[ "$value" == "None" ]] || printf '%s' "$value"
+}
+
+# Unset values keep what the deployed stacks already use, so a routine code
+# deploy never changes configuration. A new stack starts with schedules
+# disabled.
+[[ -n "$NOSPOIL_FRONTEND_ORIGIN" ]] ||
+  NOSPOIL_FRONTEND_ORIGIN="$(current_parameter "$environment_stack" FrontendOrigin)"
+[[ -n "$NOSPOIL_ALERT_EMAIL" ]] ||
+  NOSPOIL_ALERT_EMAIL="$(current_parameter "$foundation_stack" AlertEmail)"
+[[ -n "$NOSPOIL_SCHEDULE_STATE" ]] ||
+  NOSPOIL_SCHEDULE_STATE="$(current_parameter "$environment_stack" ScheduleState)"
+NOSPOIL_SCHEDULE_STATE="${NOSPOIL_SCHEDULE_STATE:-DISABLED}"
+
 [[ -n "$NOSPOIL_FRONTEND_ORIGIN" ]] || {
   echo "NOSPOIL_FRONTEND_ORIGIN is required" >&2
   exit 2
@@ -28,11 +59,7 @@ NOSPOIL_MONTHLY_BUDGET_USD="${NOSPOIL_MONTHLY_BUDGET_USD:-5}"
   echo "NOSPOIL_SCHEDULE_STATE must be DISABLED or ENABLED" >&2
   exit 2
 }
-
-aws sts get-caller-identity >/dev/null || {
-  echo "AWS credentials are required" >&2
-  exit 2
-}
+echo "Deploying $environment_stack: schedules $NOSPOIL_SCHEDULE_STATE, origin $NOSPOIL_FRONTEND_ORIGIN" >&2
 
 remove_failed_stack() {
   local stack_name="$1"
@@ -61,8 +88,6 @@ remove_failed_stack() {
   esac
 }
 
-foundation_stack="nospoil-foundation"
-environment_stack="nospoil-${environment}"
 artifact_dir="$(mktemp -d)"
 trap 'rm -rf "$artifact_dir"' EXIT
 
