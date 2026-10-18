@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from textwrap import dedent
 
 import pytest
-from fastapi.testclient import TestClient
+from starlette.testclient import TestClient
 
 from backend.nospoil_nfl.api.http import create_app, parse_origins
 from backend.nospoil_nfl.api.calendar import SeasonCalendar
@@ -298,6 +298,11 @@ def test_cold_read_runtime_import_excludes_write_modules():
         }
         loaded = sorted(forbidden.intersection(sys.modules))
         assert not loaded, loaded
+        # FastAPI and pydantic each add hundreds of ms to the Lambda cold start.
+        heavy = sorted(
+            name for name in sys.modules if name.split('.')[0] in {'fastapi', 'pydantic'}
+        )
+        assert not heavy, heavy
         assert not hasattr(DynamoReadRepository, 'create_if_absent')
         """
     )

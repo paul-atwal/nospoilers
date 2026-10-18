@@ -23,7 +23,7 @@ The active boundaries, ordered catalogue, and
 `nospoil_nfl/api/calendar.py`. Rollover appends the new season without removing
 historical identities.
 
-The active backend is a FastAPI read Lambda and a separate sync Lambda. Both use
+The active backend is a Starlette read Lambda and a separate sync Lambda. Both use
 the `backend.nospoil_nfl` package. The old always-on service, Redis cache, JSON
 cache, and background monitor were removed after the AWS cutover.
 

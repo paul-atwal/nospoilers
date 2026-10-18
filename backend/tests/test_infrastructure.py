@@ -141,7 +141,7 @@ class InfrastructureContractTest(unittest.TestCase):
         read_url = self.resources["ReadUrl"]["Properties"]
         self.assertEqual(read_url["AuthType"], "NONE")
         self.assertEqual(read_url["TargetFunctionArn"], {"Ref": "ReadFunction"})
-        # FastAPI's CORSMiddleware is the sole CORS authority. A Lambda URL
+        # Starlette's CORSMiddleware is the sole CORS authority. A Lambda URL
         # Cors block would append a second ACAO value to browser responses.
         self.assertNotIn("Cors", read_url)
         self.assertEqual(self.resources["ReadUrlPermission"]["DependsOn"], ["ReadUrl"])
