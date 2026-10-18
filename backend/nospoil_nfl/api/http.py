@@ -1,4 +1,9 @@
-"""Thin, read-only HTTP transport for the provider-free snapshot service."""
+"""Thin, read-only HTTP transport for the provider-free snapshot service.
+
+Plain Starlette rather than FastAPI: the API has three GET routes and no
+request bodies, and importing FastAPI (and pydantic with it) roughly doubled
+the read Lambda's cold start.
+"""
 
 from __future__ import annotations
 
@@ -9,11 +14,14 @@ from ipaddress import IPv4Address, IPv6Address
 from typing import Callable
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from starlette.applications import Starlette
+from starlette.exceptions import HTTPException
+from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
 
 from ..game.models import DomainValidationError, SeasonPhase
 from ..game.read_repository import (
@@ -155,6 +163,13 @@ def _parse_path_int(value: str) -> int:
     return parsed
 
 
+def _parse_phase(value: str) -> SeasonPhase:
+    try:
+        return SeasonPhase(value)
+    except ValueError:
+        raise DomainValidationError("invalid request") from None
+
+
 def create_app(
     service: ReadSnapshotService | None = None,
     *,
@@ -162,7 +177,7 @@ def create_app(
     calendar: SeasonCalendar | None = None,
     clock: object | None = None,
     origins: list[str] | None = None,
-) -> FastAPI:
+) -> Starlette:
     """Create the ASGI app; dependencies may be injected for tests."""
     if service is None:
         if repository is None:
@@ -178,18 +193,6 @@ def create_app(
         if origins is None
         else parse_origins(",".join(origins))
     )
-    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
-    app.add_middleware(_UnexpectedMiddleware)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allowed_origins,
-        allow_methods=["GET", "HEAD", "OPTIONS"],
-        allow_headers=["If-None-Match"],
-        expose_headers=["ETag", "Cache-Control", "Retry-After"],
-        allow_credentials=False,
-    )
-    app.add_middleware(_ErrorHeadersMiddleware)
-
     async def reply(request: Request, result) -> Response:
         headers = _success_headers(result.etag)
         if _etag_matches(request.headers.get("if-none-match"), result.etag):
@@ -198,6 +201,12 @@ def create_app(
             return Response(status_code=200, headers=headers)
         return JSONResponse(result.body, headers=headers)
 
+    async def http_error(request: Request, exc: HTTPException):
+        # Match FastAPI's JSON body for routing errors such as 404 and 405.
+        return JSONResponse(
+            {"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers
+        )
+
     async def repository_error(request: Request, exc: Exception):
         return JSONResponse(
             {"detail": "snapshot temporarily unavailable"},
@@ -205,43 +214,63 @@ def create_app(
             headers={"Retry-After": "30", "Cache-Control": "no-store"},
         )
 
-    app.add_exception_handler(GameRepositoryError, repository_error)
-    app.add_exception_handler(GameRepositoryDataError, repository_error)
-
-    @app.exception_handler(DomainValidationError)
     async def validation_error(request: Request, exc: Exception):
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
-    @app.exception_handler(RequestValidationError)
-    async def request_validation_error(request: Request, exc: RequestValidationError):
-        return JSONResponse({"detail": "invalid request"}, status_code=422)
-
-    @app.exception_handler(UnknownSeasonError)
     async def unknown_season(request: Request, exc: Exception):
         return JSONResponse({"detail": "unknown season"}, status_code=404)
 
-    @app.exception_handler(UnknownSeasonWeekError)
     async def unknown_week(request: Request, exc: Exception):
         return JSONResponse({"detail": "unknown season week"}, status_code=404)
 
-    @app.api_route("/api/v1/bootstrap", methods=["GET", "HEAD"])
     async def bootstrap(request: Request):
         return await reply(request, service.bootstrap())
 
-    @app.api_route("/api/v1/weeks/{season}/{phase}/{week}", methods=["GET", "HEAD"])
-    async def week(request: Request, season: str, phase: SeasonPhase, week: str):
+    async def week(request: Request):
+        params = request.path_params
         return await reply(
             request,
             service.week_snapshot(
-                _parse_path_int(season), phase, _parse_path_int(week)
+                _parse_path_int(params["season"]),
+                _parse_phase(params["phase"]),
+                _parse_path_int(params["week"]),
             ),
         )
 
-    @app.api_route("/api/v1/seasons/{season}", methods=["GET", "HEAD"])
-    async def season(request: Request, season: str):
-        return await reply(request, service.season_snapshot(_parse_path_int(season)))
+    async def season(request: Request):
+        return await reply(
+            request, service.season_snapshot(_parse_path_int(request.path_params["season"]))
+        )
 
-    return app
+    methods = ["GET", "HEAD"]
+    return Starlette(
+        routes=[
+            Route("/api/v1/bootstrap", bootstrap, methods=methods),
+            Route("/api/v1/weeks/{season}/{phase}/{week}", week, methods=methods),
+            Route("/api/v1/seasons/{season}", season, methods=methods),
+        ],
+        # Outermost first: error headers wrap CORS, which wraps the 500 guard.
+        middleware=[
+            Middleware(_ErrorHeadersMiddleware),
+            Middleware(
+                CORSMiddleware,
+                allow_origins=allowed_origins,
+                allow_methods=["GET", "HEAD", "OPTIONS"],
+                allow_headers=["If-None-Match"],
+                expose_headers=["ETag", "Cache-Control", "Retry-After"],
+                allow_credentials=False,
+            ),
+            Middleware(_UnexpectedMiddleware),
+        ],
+        exception_handlers={
+            HTTPException: http_error,
+            GameRepositoryError: repository_error,
+            GameRepositoryDataError: repository_error,
+            DomainValidationError: validation_error,
+            UnknownSeasonError: unknown_season,
+            UnknownSeasonWeekError: unknown_week,
+        },
+    )
 
 
 __all__ = ["build_service_from_environment", "create_app", "parse_origins"]

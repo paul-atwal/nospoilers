@@ -86,7 +86,7 @@ def _compile_bytecode(target: Path) -> None:
     """Precompile so Lambda does not recompile every module on each cold start.
 
     /var/task is read-only, so without shipped bytecode every cold start pays
-    to compile FastAPI, pydantic, and botocore from source. Unchecked-hash
+    to compile Starlette, botocore, and the app from source. Unchecked-hash
     bytecode stays valid regardless of the archive's fixed timestamps.
     """
     if sys.version_info[:2] != LAMBDA_PYTHON:
