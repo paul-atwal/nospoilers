@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import compileall
 import hashlib
+import py_compile
 import shutil
 import subprocess
 import sys
@@ -16,6 +18,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EXCLUDED_PACKAGE_PREFIXES = ("nflreadpy", "pandas", "pyarrow")
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
+LAMBDA_PYTHON = (3, 11)
+LAMBDA_TASK_ROOT = "/var/task"
+# Both Lambdas only call DynamoDB. The other botocore/boto3 service models are
+# most of the archive and only slow the cold-start download and extraction.
+AWS_SERVICE_MODELS = frozenset({"dynamodb"})
 
 
 def _install_dependencies(kind: str, target: Path) -> None:
@@ -66,6 +73,39 @@ def _reject_excluded_dependencies(target: Path) -> None:
         )
 
 
+def _prune_aws_service_models(target: Path) -> None:
+    for data_root in (target / "botocore" / "data", target / "boto3" / "data"):
+        if not data_root.is_dir():
+            continue
+        for service in data_root.iterdir():
+            if service.is_dir() and service.name not in AWS_SERVICE_MODELS:
+                shutil.rmtree(service)
+
+
+def _compile_bytecode(target: Path) -> None:
+    """Precompile so Lambda does not recompile every module on each cold start.
+
+    /var/task is read-only, so without shipped bytecode every cold start pays
+    to compile FastAPI, pydantic, and botocore from source. Unchecked-hash
+    bytecode stays valid regardless of the archive's fixed timestamps.
+    """
+    if sys.version_info[:2] != LAMBDA_PYTHON:
+        raise RuntimeError(
+            "Lambda bytecode must be compiled with Python "
+            + ".".join(map(str, LAMBDA_PYTHON))
+        )
+    compiled = compileall.compile_dir(
+        target,
+        quiet=1,
+        workers=0,
+        stripdir=str(target),
+        prependdir=LAMBDA_TASK_ROOT,
+        invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
+    )
+    if not compiled:
+        raise RuntimeError("Lambda bytecode compilation failed")
+
+
 def _write_reproducible_zip(source: Path, destination: Path) -> None:
     with zipfile.ZipFile(destination, "w") as archive:
         for path in sorted(item for item in source.rglob("*") if item.is_file()):
@@ -85,6 +125,8 @@ def build(kind: str, output_dir: Path) -> Path:
         _install_dependencies(kind, target)
         _copy_application(target)
         _reject_excluded_dependencies(target)
+        _prune_aws_service_models(target)
+        _compile_bytecode(target)
 
         temporary_archive = output_dir / f"{kind}.tmp.zip"
         _write_reproducible_zip(target, temporary_archive)

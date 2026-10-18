@@ -58,6 +58,12 @@ schedule check older than one day during the active season is stale. During a
 game window, a `liveSourceCheckedAt` value older than two minutes needs operator
 attention.
 
+The `nospoil-<environment>-read-warm` schedule pings the read Lambda every five
+minutes so first page loads avoid a cold start. It is always enabled and
+independent of `NOSPOIL_SCHEDULE_STATE`: it only initializes the read API, never
+reads sources or writes DynamoDB, and the "keep schedules disabled" guidance
+above refers to the sync schedules.
+
 ## Reconciliation and overdue work
 
 ### Staging inventory import

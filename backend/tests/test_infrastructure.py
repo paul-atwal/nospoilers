@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import marshal
 import tempfile
 import unittest
 import zipfile
@@ -61,7 +62,8 @@ class InfrastructureContractTest(unittest.TestCase):
         self.assertEqual(
             sync["Handler"], "backend.nospoil_nfl.sync.handler.lambda_handler"
         )
-        self.assertEqual((read["Timeout"], read["MemorySize"]), (10, 512))
+        # 1769 MB is one full vCPU, which bounds the read API's cold start.
+        self.assertEqual((read["Timeout"], read["MemorySize"]), (10, 1769))
         self.assertEqual((sync["Timeout"], sync["MemorySize"]), (45, 512))
         self.assertEqual(read["ReservedConcurrentExecutions"], 4)
         self.assertEqual(sync["ReservedConcurrentExecutions"], 1)
@@ -189,8 +191,10 @@ class InfrastructureContractTest(unittest.TestCase):
             if value["Type"] == "AWS::Scheduler::Schedule"
         }
         self.assertEqual(
-            set(schedules), {"LiveSchedule", "DailySchedule", "WeeklySchedule"}
+            set(schedules),
+            {"LiveSchedule", "DailySchedule", "WeeklySchedule", "ReadWarmSchedule"},
         )
+        warm = schedules.pop("ReadWarmSchedule")["Properties"]
         expected = {
             "LiveSchedule": ("rate(1 minute)", "LiveAlias", 60, 0, "live_tick"),
             "DailySchedule": (
@@ -231,6 +235,30 @@ class InfrastructureContractTest(unittest.TestCase):
             "Fn::Sub"
         ]
         self.assertIn('"season":${ActiveSeason}', live_input)
+        self.assertEqual(warm["ScheduleExpression"], "rate(5 minutes)")
+        self.assertEqual(warm["State"], "ENABLED")
+        self.assertEqual(warm["Target"]["Arn"], {"Fn::GetAtt": ["ReadFunction", "Arn"]})
+        self.assertEqual(json.loads(warm["Target"]["Input"]), {"nospoil_warm": True})
+        self.assertEqual(
+            warm["Target"]["RetryPolicy"],
+            {"MaximumEventAgeInSeconds": 60, "MaximumRetryAttempts": 0},
+        )
+
+    def test_scheduler_may_only_invoke_sync_aliases_and_read_function(self) -> None:
+        resources = []
+        for policy in self.resources["SchedulerRole"]["Properties"]["Policies"]:
+            for statement in policy["PolicyDocument"]["Statement"]:
+                self.assertEqual(statement["Action"], "lambda:InvokeFunction")
+                resource = statement["Resource"]
+                resources.extend(resource if isinstance(resource, list) else [resource])
+        self.assertCountEqual(
+            resources,
+            [
+                {"Ref": "LiveAlias"},
+                {"Ref": "ScheduleAlias"},
+                {"Fn::GetAtt": ["ReadFunction", "Arn"]},
+            ],
+        )
 
     def test_logs_and_alarms_are_finite_and_actionable(self) -> None:
         self.assertEqual(
@@ -415,6 +443,38 @@ class PackageContractTest(unittest.TestCase):
             self.assertFalse((copied / ".DS_Store").exists())
             self.assertFalse((copied / "__pycache__").exists())
 
+
+    def test_unused_aws_service_models_are_pruned(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for data in ("botocore/data", "boto3/data"):
+                for service in ("dynamodb", "s3"):
+                    (root / data / service).mkdir(parents=True)
+            (root / "botocore/data/endpoints.json").write_text("{}")
+
+            self.module._prune_aws_service_models(root)
+
+            for data in ("botocore/data", "boto3/data"):
+                self.assertTrue((root / data / "dynamodb").is_dir())
+                self.assertFalse((root / data / "s3").exists())
+            self.assertTrue((root / "botocore/data/endpoints.json").is_file())
+
+    def test_bytecode_is_precompiled_for_the_lambda_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            package = root / "backend" / "nospoil_nfl"
+            package.mkdir(parents=True)
+            (package / "handler.py").write_text("ok = True\n")
+
+            self.module._compile_bytecode(root)
+
+            tag = "cpython-%d%d" % self.module.LAMBDA_PYTHON
+            pyc = package / "__pycache__" / f"handler.{tag}.pyc"
+            data = pyc.read_bytes()
+            # PEP 552 flags: hash-based (bit 0) and unchecked (bit 1 clear).
+            self.assertEqual(int.from_bytes(data[4:8], "little"), 0b01)
+            code = marshal.loads(data[16:])
+            self.assertEqual(code.co_filename, "/var/task/backend/nospoil_nfl/handler.py")
 
 if __name__ == "__main__":
     unittest.main()

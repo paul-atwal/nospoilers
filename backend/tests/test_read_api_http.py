@@ -335,3 +335,43 @@ def test_import_handler_does_not_require_runtime_environment(monkeypatch):
     monkeypatch.delenv("NOSPOIL_FRONTEND_ORIGINS", raising=False)
     import backend.nospoil_nfl.api.handler as handler
     assert handler.lambda_handler and handler._lambda_handler is None
+
+
+def test_warm_ping_initializes_without_dispatching_a_request(monkeypatch):
+    import backend.nospoil_nfl.api.handler as handler
+
+    built = []
+
+    def build():
+        built.append(True)
+        return lambda event, context: pytest.fail("warm ping reached the app")
+
+    monkeypatch.setattr(handler, "_build_handler", build)
+    monkeypatch.setattr(handler, "_lambda_handler", None)
+    assert handler.lambda_handler({"nospoil_warm": True}, None) == {"warm": True}
+    assert handler.lambda_handler({"nospoil_warm": True}, None) == {"warm": True}
+    assert built == [True]
+
+
+def test_lambda_runtime_builds_handler_during_init():
+    code = dedent(
+        """
+        import os
+        os.environ.update(
+            AWS_LAMBDA_FUNCTION_NAME="nospoil-test-read",
+            AWS_DEFAULT_REGION="us-west-2",
+            AWS_ACCESS_KEY_ID="test",
+            AWS_SECRET_ACCESS_KEY="test",
+            NOSPOIL_GAMES_TABLE="games",
+            NOSPOIL_FRONTEND_ORIGINS="https://app.example",
+        )
+        import backend.nospoil_nfl.api.handler as handler
+        assert handler._lambda_handler is not None
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code], check=False, capture_output=True, text=True
+    )
+
+    assert result.returncode == 0, result.stderr
