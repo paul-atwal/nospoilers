@@ -284,7 +284,7 @@
             }
           }
         },
-        "MemorySize": 512
+        "MemorySize": 1769
       }
     },
     "ReadUrl": {
@@ -468,6 +468,24 @@
                 }
               ]
             }
+          },
+          {
+            "PolicyName": "invoke-read-warm",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "lambda:InvokeFunction",
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "ReadFunction",
+                      "Arn"
+                    ]
+                  }
+                }
+              ]
+            }
           }
         ]
       }
@@ -565,6 +583,38 @@
         "State": {
           "Ref": "ScheduleState"
         }
+      }
+    },
+    "ReadWarmSchedule": {
+      "Type": "AWS::Scheduler::Schedule",
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "nospoil-${Environment}-read-warm"
+        },
+        "FlexibleTimeWindow": {
+          "Mode": "OFF"
+        },
+        "ScheduleExpression": "rate(5 minutes)",
+        "Target": {
+          "Arn": {
+            "Fn::GetAtt": [
+              "ReadFunction",
+              "Arn"
+            ]
+          },
+          "RoleArn": {
+            "Fn::GetAtt": [
+              "SchedulerRole",
+              "Arn"
+            ]
+          },
+          "Input": "{\"nospoil_warm\":true}",
+          "RetryPolicy": {
+            "MaximumEventAgeInSeconds": 60,
+            "MaximumRetryAttempts": 0
+          }
+        },
+        "State": "ENABLED"
       }
     },
     "GitHubReconcileRole": {
@@ -861,6 +911,11 @@
     "WeeklyScheduleName": {
       "Value": {
         "Ref": "WeeklySchedule"
+      }
+    },
+    "ReadWarmScheduleName": {
+      "Value": {
+        "Ref": "ReadWarmSchedule"
       }
     }
   }

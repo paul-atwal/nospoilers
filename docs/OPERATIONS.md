@@ -18,33 +18,30 @@ that environment's games table. Optionally set the bounded
 `NOSPOIL_NFLVERSE_TIMEOUT_SECONDS` (at most 60). Never copy staging table or
 role values into the production GitHub environment.
 
-## Authorized CloudShell deployment
+## Deployment
 
-The local AWS CLI intentionally has no credentials. For an authorized staging
-deployment, open AWS CloudShell in `us-west-2`, authenticate as the approved
-account, and run the reviewed revision without placing access keys in files or
-logs:
+Agents deploy end to end by following the release sequence in
+[AGENTS.md](../AGENTS.md): staging from the PR branch, verify, merge, then
+production from `main`. Run deployments from a checkout with AWS CLI
+credentials for account `945461162255`. Locally that means `aws login --remote`
+with the region set to `us-west-2`. AWS CloudShell in `us-west-2` also works.
+Don't put access keys in files or logs.
 
 ```bash
-git clone https://github.com/paul-atwal/nospoilers.git
-cd nospoilers
-# Substitute the immutable PM-accepted commit SHA for <PM-accepted-commit>.
-git checkout <PM-accepted-commit>
-export AWS_REGION=us-west-2
-export NOSPOIL_SCHEDULE_STATE=DISABLED
-export NOSPOIL_FRONTEND_ORIGIN=https://nospoilers-web.onrender.com
-export NOSPOIL_ALERT_EMAIL=paulatwal_@hotmail.com
 bash infra/deploy.sh staging
 ```
 
-Confirm the CloudFormation stack reaches `UPDATE_COMPLETE`, then inspect the
-outputs and run a scoped read/API check. Keep AWS Scheduler resources disabled
-and keep `reconcile-ratings.yml` manually disabled until the gate-bearing commit
-reaches the default branch. Then re-enable the workflow while the repository
-variable is absent or `false`, and use manual dispatch for staging and
-production verification. Only after those checks pass should the repository
-variable be set to `NOSPOIL_RECONCILIATION_SCHEDULE_ENABLED=true`. Chunk E owns
-that sequence and must retain manual dispatch while the gate is off.
+When an environment variable is unset, `deploy.sh` keeps what the deployed
+stacks already use: `NOSPOIL_FRONTEND_ORIGIN` and `NOSPOIL_SCHEDULE_STATE` from
+`nospoil-<environment>`, and `NOSPOIL_ALERT_EMAIL` from `nospoil-foundation`.
+So a code deploy never changes configuration. Production's sync schedules stay
+`ENABLED` and staging's stay `DISABLED`. A stack created for the first time
+starts with schedules disabled. Set a variable only to change that
+configuration on purpose. For example, a rollback sets
+`NOSPOIL_SCHEDULE_STATE=DISABLED`.
+
+Verify each deployment as described under "Verifying a deployment" in
+[AGENTS.md](../AGENTS.md).
 
 ## Health and freshness
 
@@ -57,6 +54,12 @@ while the DynamoDB item is the source for the exact next-attempt time. A
 schedule check older than one day during the active season is stale. During a
 game window, a `liveSourceCheckedAt` value older than two minutes needs operator
 attention.
+
+The `nospoil-<environment>-read-warm` schedule pings the read Lambda every five
+minutes so first page loads avoid a cold start. It is always enabled and
+independent of `NOSPOIL_SCHEDULE_STATE`: it only initializes the read API, never
+reads sources or writes DynamoDB, and the "keep schedules disabled" guidance
+above refers to the sync schedules.
 
 ## Reconciliation and overdue work
 
