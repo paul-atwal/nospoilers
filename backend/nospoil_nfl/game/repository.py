@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
+
+from .live_rating import LiveRating
 
 from .models import (
     DomainValidationError,
@@ -84,6 +87,12 @@ class GameRepository(Protocol):
 
     def apply_rating(self, current: Game, rating: GameRating) -> WriteResult:
         """Apply one complete rating when the current item still matches."""
+        ...
+
+    def apply_live_rating(
+        self, current: Game, rating: LiveRating | None, *, checked_at: datetime
+    ) -> WriteResult:
+        """Checkpoint one live attempt without touching completed-rating fields."""
         ...
 
     def apply_nflverse_mapping(

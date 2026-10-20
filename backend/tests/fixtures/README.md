@@ -7,6 +7,12 @@ These are trimmed ESPN summary responses captured on August 24, 2026. They retai
 - `espn_summary_regulation.json`: 2025 Week 3, Jets at Buccaneers, event `401772840`.
 - `espn_summary_overtime.json`: 2025 Week 12, Giants at Lions, event `401772888`.
 
+`espn_live_overtime.json` is a synthetic ESPN-shaped feed containing 32
+ordered timed WP plays across regulation and overtime, plus an unjoined pregame
+baseline. It exercises the recorded provider field shapes without committing
+downloaded replay data. Tests truncate or mutate observations to cover timing,
+identity and lifecycle failures. Its header deliberately represents live play.
+
 The tests read these files locally and never call ESPN.
 
 ## nflverse play by play

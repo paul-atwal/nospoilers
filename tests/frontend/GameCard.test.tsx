@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import GameCard from '../../components/GameCard';
 import type { GameRecordSnapshots, RecordScope } from '../../types';
 import { makeGame } from './fixtures/game';
@@ -279,4 +279,33 @@ describe('GameCard identity and accessibility safety', () => {
     expect(screen.queryByRole('img', { name: 'Home Team logo' })).toBeNull();
     expect(screen.getByLabelText('Home Team abbreviation').textContent).toBe('HME');
   });
+});
+
+
+it('shows a numeric score alongside LIVE and expires it during an API outage', () => {
+  vi.useFakeTimers();
+  try {
+    const now = Date.now();
+    const live = makeGame({
+      isLive: true, status: 'Overtime',
+      rating: { state: 'live', label: 'Live rating', score: 8.2, expiresAt: new Date(now + 1000).toISOString() },
+    });
+    render(<GameCard game={live} />);
+    expect(screen.getByLabelText('Live game, rating 8.2')).not.toBeNull();
+    expect(screen.getByText('8.2')).not.toBeNull();
+    expect(screen.getByText('LIVE')).not.toBeNull();
+    expect(screen.queryByText(/Rating so far/i)).toBeNull();
+    expect(screen.queryByText('24')).toBeNull();
+    expect(screen.queryByText('17')).toBeNull();
+    act(() => vi.advanceTimersByTime(1001));
+    expect(screen.queryByText('8.2')).toBeNull();
+    expect(screen.getByLabelText('Live game')).not.toBeNull();
+    expect(screen.getByText('LIVE')).not.toBeNull();
+  } finally { vi.useRealTimers(); }
+});
+
+it('does not reuse a completed numeric score on an unrated live card', () => {
+  render(<GameCard game={makeGame({ isLive: true })} />);
+  expect(screen.queryByText('6.5')).toBeNull();
+  expect(screen.getByText('LIVE')).not.toBeNull();
 });

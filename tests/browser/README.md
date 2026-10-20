@@ -12,6 +12,7 @@ Select/reset a scenario without restarting either process:
 
 ```bash
 curl 'http://127.0.0.1:8011/__set?name=lifecycle'
+curl 'http://127.0.0.1:8011/__set?name=semi-live'
 curl 'http://127.0.0.1:8011/__set?name=postponed'
 curl 'http://127.0.0.1:8011/__set?name=unavailable'
 curl 'http://127.0.0.1:8011/__set?name=unsupported'
@@ -27,6 +28,10 @@ a score, two live score snapshots, provisional, and confirmed. The automated
 pass also injects one connection reset. The season envelope polls once even
 though its visible top ten is already rated; `unsupported` does not poll. The
 request log is the network evidence for endpoint counts and paths.
+
+The `semi-live` scenario presents regulation and overtime numeric badges plus
+an unrated live game. All game scores remain concealed; the badges use a future
+expiry based on response time so a preview is independent of wall-clock date.
 
 For the repeatable automated Chrome pass, install the pinned runner without
 changing application dependencies, then run:

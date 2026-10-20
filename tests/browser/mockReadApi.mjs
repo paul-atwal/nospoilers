@@ -35,10 +35,10 @@ const game = ({
   home = team('26', 'Seattle Seahawks', 'SEA', record(0, 0)),
   away = team('17', 'New England Patriots', 'NE', record(0, 0)),
   state = 'scheduled', detail = null, period = null, clock = null, score = null,
-  gameRating = rating(), broadcaster = 'NBC', odds = { details: 'SEA -3.5', updatedAt: '2026-09-10T00:00:00Z' },
+  liveRating = null, gameRating = rating(), broadcaster = 'NBC', odds = { details: 'SEA -3.5', updatedAt: '2026-09-10T00:00:00Z' },
 } = {}) => ({
   id, espnId: id, seasonWeek, kickoffAt, home, away,
-  status: { state, detail, period, clock, score }, broadcaster, odds, rating: gameRating,
+  status: { state, detail, period, clock, score }, broadcaster, odds, rating: gameRating, liveRating,
   freshness: { scheduleCheckedAt: '2026-09-11T04:00:00Z', scheduleUpdatedAt: '2026-09-10T00:00:00Z', liveSourceCheckedAt: '2026-09-11T04:00:00Z', liveStateUpdatedAt: '2026-09-11T04:00:00Z' },
 });
 const envelope = (games, pollAfterSeconds, selectedWeek = week(1)) => ({ season: selectedWeek.season, week: selectedWeek, snapshotAsOf: games.length ? '2026-09-11T04:00:00Z' : null, pollAfterSeconds, games });
@@ -123,6 +123,21 @@ const server = http.createServer((request, response) => {
   const key = `week-${selectedWeek.season}-${selectedWeek.phase}-${selectedWeek.week}`;
   const step = count(key);
 
+  if (scenario === 'semi-live') {
+    const timestamp = Date.now();
+    const liveRating = (score, period = 3) => ({
+      score, source: 'espn', modelVersion: 'live-espn-v1',
+      calculatedAt: new Date(timestamp - 1000).toISOString(),
+      sourceUpdatedAt: new Date(timestamp - 2000).toISOString(),
+      expiresAt: new Date(timestamp + 600_000).toISOString(), period, clock: '4:02',
+    });
+    const body = envelope([
+      game({ id: 'live-regulation', state: 'in_progress', detail: '3rd Quarter', period: 3, clock: '4:02', score: { home: 17, away: 14 }, liveRating: liveRating(6.8), odds: null }),
+      game({ id: 'live-overtime', home: team('3', 'Chicago Bears', 'CHI'), away: team('9', 'Green Bay Packers', 'GB'), state: 'in_progress', detail: 'Overtime', period: 5, clock: '4:02', score: { home: 21, away: 21 }, liveRating: liveRating(8.2, 5), odds: null }),
+      game({ id: 'live-no-data', home: team('25', 'San Francisco 49ers', 'SF'), away: team('14', 'Los Angeles Rams', 'LAR'), state: 'in_progress', detail: '1st Quarter', period: 1, clock: '13:22', score: { home: 0, away: 0 }, odds: null }),
+    ], 30, selectedWeek);
+    return reply(request, response, 200, body, { ETag: `"semi-live-${step}"` });
+  }
   if (scenario === 'race') {
     const body = envelope([game({ id: `race-${selectedWeek.week}`, seasonWeek: selectedWeek, home: team(`race-home-${selectedWeek.week}`, selectedWeek.week === 1 ? 'Slow Week One' : 'Fast Week Two', 'SEA') })], null, selectedWeek);
     return setTimeout(() => reply(request, response, 200, body, { ETag: `"race-${selectedWeek.week}"` }), selectedWeek.week === 1 ? 1500 : 0);

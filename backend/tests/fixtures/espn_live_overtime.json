@@ -1,0 +1,523 @@
+{
+  "header": {
+    "competitions": [
+      {
+        "id": "live-event",
+        "status": {
+          "type": {
+            "state": "in",
+            "completed": false
+          }
+        },
+        "competitors": [
+          {
+            "homeAway": "home",
+            "team": {
+              "id": "home"
+            }
+          },
+          {
+            "homeAway": "away",
+            "team": {
+              "id": "away"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "winprobability": [
+    {
+      "playId": "pregame-baseline",
+      "homeWinPercentage": 0.5
+    },
+    {
+      "playId": "live-play-0",
+      "homeWinPercentage": 0.42
+    },
+    {
+      "playId": "live-play-1",
+      "homeWinPercentage": 0.445
+    },
+    {
+      "playId": "live-play-2",
+      "homeWinPercentage": 0.47
+    },
+    {
+      "playId": "live-play-3",
+      "homeWinPercentage": 0.495
+    },
+    {
+      "playId": "live-play-4",
+      "homeWinPercentage": 0.52
+    },
+    {
+      "playId": "live-play-5",
+      "homeWinPercentage": 0.42
+    },
+    {
+      "playId": "live-play-6",
+      "homeWinPercentage": 0.445
+    },
+    {
+      "playId": "live-play-7",
+      "homeWinPercentage": 0.47
+    },
+    {
+      "playId": "live-play-8",
+      "homeWinPercentage": 0.495
+    },
+    {
+      "playId": "live-play-9",
+      "homeWinPercentage": 0.52
+    },
+    {
+      "playId": "live-play-10",
+      "homeWinPercentage": 0.42
+    },
+    {
+      "playId": "live-play-11",
+      "homeWinPercentage": 0.445
+    },
+    {
+      "playId": "live-play-12",
+      "homeWinPercentage": 0.47
+    },
+    {
+      "playId": "live-play-13",
+      "homeWinPercentage": 0.495
+    },
+    {
+      "playId": "live-play-14",
+      "homeWinPercentage": 0.52
+    },
+    {
+      "playId": "live-play-15",
+      "homeWinPercentage": 0.42
+    },
+    {
+      "playId": "live-play-16",
+      "homeWinPercentage": 0.445
+    },
+    {
+      "playId": "live-play-17",
+      "homeWinPercentage": 0.47
+    },
+    {
+      "playId": "live-play-18",
+      "homeWinPercentage": 0.495
+    },
+    {
+      "playId": "live-play-19",
+      "homeWinPercentage": 0.52
+    },
+    {
+      "playId": "live-play-20",
+      "homeWinPercentage": 0.42
+    },
+    {
+      "playId": "live-play-21",
+      "homeWinPercentage": 0.445
+    },
+    {
+      "playId": "live-play-22",
+      "homeWinPercentage": 0.47
+    },
+    {
+      "playId": "live-play-23",
+      "homeWinPercentage": 0.495
+    },
+    {
+      "playId": "live-play-24",
+      "homeWinPercentage": 0.52
+    },
+    {
+      "playId": "live-play-25",
+      "homeWinPercentage": 0.42
+    },
+    {
+      "playId": "live-play-26",
+      "homeWinPercentage": 0.445
+    },
+    {
+      "playId": "live-play-27",
+      "homeWinPercentage": 0.47
+    },
+    {
+      "playId": "live-play-28",
+      "homeWinPercentage": 0.495
+    },
+    {
+      "playId": "live-play-29",
+      "homeWinPercentage": 0.52
+    },
+    {
+      "playId": "live-play-30",
+      "homeWinPercentage": 0.42
+    },
+    {
+      "playId": "live-play-31",
+      "homeWinPercentage": 0.445
+    }
+  ],
+  "drives": {
+    "previous": [
+      {
+        "plays": [
+          {
+            "id": "live-play-0",
+            "sequenceNumber": "100",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "9:00"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-1",
+            "sequenceNumber": "200",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "8:48"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-2",
+            "sequenceNumber": "300",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "8:36"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-3",
+            "sequenceNumber": "400",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "8:24"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-4",
+            "sequenceNumber": "500",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "8:12"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-5",
+            "sequenceNumber": "600",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "8:00"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-6",
+            "sequenceNumber": "700",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "7:48"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-7",
+            "sequenceNumber": "800",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "7:36"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-8",
+            "sequenceNumber": "900",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "7:24"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-9",
+            "sequenceNumber": "1000",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "7:12"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-10",
+            "sequenceNumber": "1100",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "7:00"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-11",
+            "sequenceNumber": "1200",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "6:48"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-12",
+            "sequenceNumber": "1300",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "6:36"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-13",
+            "sequenceNumber": "1400",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "6:24"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-14",
+            "sequenceNumber": "1500",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "6:12"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-15",
+            "sequenceNumber": "1600",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "6:00"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-16",
+            "sequenceNumber": "1700",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "5:48"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-17",
+            "sequenceNumber": "1800",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "5:36"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-18",
+            "sequenceNumber": "1900",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "5:24"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-19",
+            "sequenceNumber": "2000",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "5:12"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-20",
+            "sequenceNumber": "2100",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "5:00"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-21",
+            "sequenceNumber": "2200",
+            "period": {
+              "number": 4
+            },
+            "clock": {
+              "displayValue": "4:48"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-22",
+            "sequenceNumber": "2300",
+            "period": {
+              "number": 5
+            },
+            "clock": {
+              "displayValue": "10:00"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-23",
+            "sequenceNumber": "2400",
+            "period": {
+              "number": 5
+            },
+            "clock": {
+              "displayValue": "9:30"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-24",
+            "sequenceNumber": "2500",
+            "period": {
+              "number": 5
+            },
+            "clock": {
+              "displayValue": "9:00"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-25",
+            "sequenceNumber": "2600",
+            "period": {
+              "number": 5
+            },
+            "clock": {
+              "displayValue": "8:30"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-26",
+            "sequenceNumber": "2700",
+            "period": {
+              "number": 5
+            },
+            "clock": {
+              "displayValue": "8:00"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-27",
+            "sequenceNumber": "2800",
+            "period": {
+              "number": 5
+            },
+            "clock": {
+              "displayValue": "7:30"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-28",
+            "sequenceNumber": "2900",
+            "period": {
+              "number": 5
+            },
+            "clock": {
+              "displayValue": "7:00"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-29",
+            "sequenceNumber": "3000",
+            "period": {
+              "number": 5
+            },
+            "clock": {
+              "displayValue": "6:30"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-30",
+            "sequenceNumber": "3100",
+            "period": {
+              "number": 5
+            },
+            "clock": {
+              "displayValue": "6:00"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          },
+          {
+            "id": "live-play-31",
+            "sequenceNumber": "3200",
+            "period": {
+              "number": 5
+            },
+            "clock": {
+              "displayValue": "5:30"
+            },
+            "wallclock": "2026-10-19T18:00:00Z"
+          }
+        ]
+      }
+    ]
+  }
+}

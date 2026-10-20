@@ -48,7 +48,12 @@ const toTeam = (team: ApiTeam): TeamView => ({
 });
 
 export const toRatingPresentation = (game: ApiGame): RatingPresentation => {
-  const score = game.rating.state === 'confirmed' || game.rating.state === 'provisional' ? game.rating.score : null;
+  const live = game.liveRating;
+  if (game.status.state === 'in_progress' && live
+    && Date.parse(live.calculatedAt) <= Date.now() && Date.parse(live.expiresAt) > Date.now()) {
+    return { state: 'live', label: 'Live rating', score: live.score, expiresAt: live.expiresAt };
+  }
+  const score = game.status.state === 'final' && (game.rating.state === 'confirmed' || game.rating.state === 'provisional') ? game.rating.score : null;
   const labels: Record<ApiGame['rating']['state'], string> = { pending: 'Rating pending', provisional: 'Provisional rating', confirmed: 'Confirmed rating', unavailable: 'Rating unavailable' };
   return {
     state: game.rating.state,

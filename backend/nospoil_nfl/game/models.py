@@ -8,6 +8,8 @@ from enum import StrEnum
 import math
 from typing import NewType
 
+from .live_rating import LiveRating
+
 
 GameId = NewType("GameId", str)
 
@@ -374,6 +376,8 @@ class Game:
     broadcaster: str | None = None
     odds: OddsSnapshot | None = None
     confirmation_retry: RatingRetry = field(default_factory=RatingRetry)
+    live_rating: LiveRating | None = None
+    live_rating_checked_at: datetime | None = None
 
     def __post_init__(self) -> None:
         _require_text("game_id", self.game_id)
@@ -402,6 +406,14 @@ class Game:
 
         if self.home.team_id == self.away.team_id:
             raise DomainValidationError("home and away teams must be different")
+
+        if self.live_rating_checked_at is not None:
+            _require_utc("live_rating_checked_at", self.live_rating_checked_at)
+        if self.live_rating is not None:
+            if not isinstance(self.live_rating, LiveRating):
+                raise DomainValidationError("live_rating must be a LiveRating")
+            if self.live_rating_checked_at is None or self.live_rating.calculated_at > self.live_rating_checked_at:
+                raise DomainValidationError("live rating requires a matching check timestamp")
 
         self._validate_record_scope()
         if self.status.state is not GameState.FINAL and any(

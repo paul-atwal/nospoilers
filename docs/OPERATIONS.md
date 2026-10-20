@@ -55,6 +55,15 @@ schedule check older than one day during the active season is stale. During a
 game window, a `liveSourceCheckedAt` value older than two minutes needs operator
 attention.
 
+Semi-live ratings add no schedules or read-time provider calls. The normal live
+sync attempts at most eight game summaries after completed provisional work;
+`live_rating_source_call`, `live_rating_source_failed`, `live_rating_no_data`,
+`live_rating_budget_skip` and `live_rating_stale_write` events distinguish source,
+freshness, budget and write-race outcomes. Missing or ten-minute-old play
+wallclocks hide numbers until fresh input returns; halftime may cross this
+threshold. Repeated fetches never renew an unchanged prefix. See
+[LIVE_RATINGS.md](LIVE_RATINGS.md) for calibration and overtime behavior.
+
 The `nospoil-<environment>-read-warm` schedule pings the read Lambda every five
 minutes so first page loads avoid a cold start. It is always enabled and
 independent of `NOSPOIL_SCHEDULE_STATE`: it only initializes the read API, never

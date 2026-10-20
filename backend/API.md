@@ -40,8 +40,18 @@ Representative week/game JSON (all listed nullable fields are independently
 nullable, including pregame versus postgame records):
 
 ```json
-{"season":2026,"week":{"season":2026,"phase":"regular_season","week":1},"snapshotAsOf":"2026-09-11T04:02:00Z","pollAfterSeconds":30,"games":[{"id":"401872656","espnId":"401872656","seasonWeek":{"season":2026,"phase":"regular_season","week":1},"kickoffAt":"2026-09-10T00:20:00Z","home":{"id":"26","displayName":"Seattle Seahawks","abbreviation":"SEA","logoKey":"sea","pregameRecord":{"wins":0,"losses":0,"ties":0,"scope":"regular_season","snapshotAt":"2026-09-09T12:00:00Z"},"postgameRecord":null},"away":{"id":"17","displayName":"New England Patriots","abbreviation":"NE","logoKey":"ne","pregameRecord":null,"postgameRecord":null},"status":{"state":"in_progress","detail":"3rd Quarter","period":3,"clock":"08:14","score":{"home":17,"away":10}},"broadcaster":"NBC","odds":{"details":"SEA -3.5","updatedAt":"2026-09-09T12:00:00Z"},"rating":{"state":"pending","score":null,"source":null,"modelVersion":null,"calculatedAt":null,"confirmedAt":null,"confirmationSupported":true,"confirmationWorkRemains":false},"freshness":{"scheduleCheckedAt":"2026-09-10T00:15:00Z","scheduleUpdatedAt":"2026-09-09T12:00:00Z","liveSourceCheckedAt":"2026-09-11T04:02:00Z","liveStateUpdatedAt":"2026-09-11T04:02:00Z"}}]}
+{"season":2026,"week":{"season":2026,"phase":"regular_season","week":1},"snapshotAsOf":"2026-09-11T04:02:00Z","pollAfterSeconds":30,"games":[{"id":"401872656","espnId":"401872656","seasonWeek":{"season":2026,"phase":"regular_season","week":1},"kickoffAt":"2026-09-10T00:20:00Z","home":{"id":"26","displayName":"Seattle Seahawks","abbreviation":"SEA","logoKey":"sea","pregameRecord":{"wins":0,"losses":0,"ties":0,"scope":"regular_season","snapshotAt":"2026-09-09T12:00:00Z"},"postgameRecord":null},"away":{"id":"17","displayName":"New England Patriots","abbreviation":"NE","logoKey":"ne","pregameRecord":null,"postgameRecord":null},"status":{"state":"in_progress","detail":"3rd Quarter","period":3,"clock":"08:14","score":{"home":17,"away":10}},"broadcaster":"NBC","odds":{"details":"SEA -3.5","updatedAt":"2026-09-09T12:00:00Z"},"liveRating":{"score":6.8,"source":"espn","modelVersion":"live-espn-v1","calculatedAt":"2026-09-11T04:02:00Z","sourceUpdatedAt":"2026-09-11T04:01:30Z","expiresAt":"2026-09-11T04:11:30Z","period":3,"clock":"08:14"},"rating":{"state":"pending","score":null,"source":null,"modelVersion":null,"calculatedAt":null,"confirmedAt":null,"confirmationSupported":true,"confirmationWorkRemains":false},"freshness":{"scheduleCheckedAt":"2026-09-10T00:15:00Z","scheduleUpdatedAt":"2026-09-09T12:00:00Z","liveSourceCheckedAt":"2026-09-11T04:02:00Z","liveStateUpdatedAt":"2026-09-11T04:02:00Z"}}]}
 ```
+
+Each game also contains additive `liveRating`: either `null`, or the numeric
+ESPN live snapshot shown above. It is independent of `rating`, which retains
+its completed-game states and provenance. Only `in_progress` games with an
+unexpired live snapshot expose a number. Period/clock describe the latest
+matched WP play, which may trail the scoreboard. Expiry changes the ETag even
+without a write. Clients must also honor `expiresAt` locally when reusing a
+cached body or during an outage. Older responses may omit `liveRating`;
+clients treat omission as `null`. See [live rating policy](../docs/LIVE_RATINGS.md)
+for timing, overtime, calibration, and bounded sync work.
 
 Season responses use the same envelope and game shape but omit `week` and
 include all season games in Best-of-Season order. Bootstrap resembles
@@ -73,7 +83,7 @@ must-revalidate` and a quoted canonical SHA-256 ETag. `If-None-Match` supports
 exact, weak, comma-list, and `*`; a match is an empty `304` with current ETag
 and cache header. Clients retain their prior body and `pollAfterSeconds` after
 304; ordinary clock ticks do not change the ETag, while stored changes,
-polling-class threshold crossings, or calendar changes produce `200`.
+polling-class threshold crossings, live-rating expiry, or calendar changes produce `200`.
 Repository/data failures
 are `503` with `{"detail":"snapshot temporarily unavailable"}`,
 `Retry-After: 30`, and `Cache-Control: no-store`; all >=400 responses are

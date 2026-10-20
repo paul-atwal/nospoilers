@@ -46,6 +46,17 @@ class EspnGameSummaryClient:
     def fetch_summary(self, game_id: GameId) -> GameSummary:
         """Return a normalized summary for one completed ESPN game."""
         requested_game_id = _text(game_id, "game_id")
+        payload = self._fetch_payload(game_id)
+        try:
+            return _normalize_summary(payload, requested_game_id)
+        except ProviderDataError:
+            raise
+        except (DomainValidationError, KeyError, TypeError, ValueError) as exc:
+            raise _data_error("ESPN game summary response was malformed") from exc
+
+    def _fetch_payload(self, game_id: GameId) -> object:
+        """Shared HTTP transport; each consumer validates its own lifecycle."""
+        requested_game_id = _text(game_id, "game_id")
         url = f"{ESPN_GAME_SUMMARY_URL}?event={requested_game_id}"
 
         try:
@@ -74,12 +85,7 @@ class EspnGameSummaryClient:
         except (TypeError, ValueError) as exc:
             raise _data_error("ESPN game summary response was not valid JSON") from exc
 
-        try:
-            return _normalize_summary(payload, requested_game_id)
-        except ProviderDataError:
-            raise
-        except (DomainValidationError, KeyError, TypeError, ValueError) as exc:
-            raise _data_error("ESPN game summary response was malformed") from exc
+        return payload
 
 
 def _normalize_summary(payload: object, game_id: str) -> GameSummary:

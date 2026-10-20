@@ -1047,3 +1047,27 @@ def test_schedule_handoff_respects_future_rating_retry_time() -> None:
     )
 
     assert result.provisional_rating_game_ids == ()
+
+
+def test_live_rating_handoffs_are_fair_due_and_independent_of_scoreboard_interval():
+    status = GameStatus(GameState.IN_PROGRESS, period=2, clock='8:00', score=Score(0, 0))
+    base = saved_game('new', status=status, live_checked_at=NOW)
+    repository = FakeRepository((
+        replace(base, game_id=GameId('recent'), espn_id='recent', live_rating_checked_at=NOW-timedelta(seconds=10)),
+        replace(base, game_id=GameId('later'), espn_id='later', live_rating_checked_at=NOW-timedelta(minutes=1)),
+        replace(base, game_id=GameId('oldest'), espn_id='oldest', live_rating_checked_at=NOW-timedelta(minutes=2)),
+        replace(base, game_id=GameId('abandoned'), espn_id='abandoned', kickoff_at=NOW-timedelta(days=2)),
+        base,
+    ))
+    provider = FakeScoreboard(batch(REGULAR_1))
+    result = ScheduleSyncService(repository, provider).run(event(SyncMode.LIVE_TICK, season=2026), now=NOW)
+    assert result.live_rating_game_ids == (GameId('new'), GameId('oldest'), GameId('later'))
+    assert provider.calls == []
+
+
+def test_just_started_games_are_handed_to_live_ratings_in_the_same_tick():
+    status = GameStatus(GameState.IN_PROGRESS, period=1, clock='12:00', score=Score(0, 0))
+    repository = FakeRepository((saved_game('starting'),))
+    provider = FakeScoreboard(batch(REGULAR_1, observed_game('starting', status=status)))
+    result = ScheduleSyncService(repository, provider).run(event(SyncMode.LIVE_TICK, season=2026), now=NOW)
+    assert result.live_rating_game_ids == (GameId('starting'),)

@@ -1667,3 +1667,75 @@ def test_get_wraps_a_dynamodb_transport_failure() -> None:
 
     with pytest.raises(GameRepositoryError, match="could not read game"):
         repository.get(GameId("401000001"))
+
+
+def live_rating_value():
+    from backend.nospoil_nfl.game.live_rating import LiveRating
+    return LiveRating(
+        score=6.5, model_version='live-espn-v1', input_hash='live-prefix',
+        calculated_at=CHECKED_AT, source_updated_at=CHECKED_AT,
+        expires_at=CHECKED_AT+timedelta(minutes=10), period=4, clock='1:00',
+        last_play_sequence=100, observation_count=120,
+    )
+
+
+def live_game(game_id='live'):
+    return replace(make_game(game_id), status=GameStatus(GameState.IN_PROGRESS, period=4, clock='1:00', score=Score(14, 14)))
+
+
+def test_live_rating_roundtrip_and_attempt_preserves_the_old_expiry(game_table):
+    repository = DynamoGameRepository(game_table)
+    current = live_game()
+    assert repository.create_if_absent(current)
+    rating = live_rating_value()
+    assert repository.apply_live_rating(current, rating, checked_at=CHECKED_AT) is WriteResult.APPLIED
+    stored = repository.get(current.game_id)
+    assert stored.live_rating == rating
+    assert stored.rating == current.rating
+    assert stored.live_rating_checked_at == CHECKED_AT
+    assert repository.apply_live_rating(stored, None, checked_at=CHECKED_AT+timedelta(minutes=1)) is WriteResult.APPLIED
+    latest = repository.get(current.game_id)
+    assert latest.live_rating == rating
+    assert latest.live_rating.expires_at == rating.expires_at
+    assert latest.live_rating_checked_at == CHECKED_AT+timedelta(minutes=1)
+
+
+def test_live_rating_lost_race_cannot_overwrite_newer_prefix(game_table):
+    repository = DynamoGameRepository(game_table)
+    current = live_game()
+    repository.create_if_absent(current)
+    first = live_rating_value()
+    assert repository.apply_live_rating(current, first, checked_at=CHECKED_AT) is WriteResult.APPLIED
+    assert repository.apply_live_rating(current, replace(first, score=2), checked_at=CHECKED_AT+timedelta(minutes=1)) is WriteResult.STALE
+    latest = repository.get(current.game_id)
+    assert repository.apply_live_rating(latest, replace(first, last_play_sequence=90), checked_at=CHECKED_AT+timedelta(minutes=1)) is WriteResult.STALE
+    assert repository.get(current.game_id).live_rating == first
+
+
+def test_finalization_wins_against_an_inflight_live_rating(game_table):
+    repository = DynamoGameRepository(game_table)
+    current = live_game()
+    repository.create_if_absent(current)
+    final = GameStatus(GameState.FINAL, score=Score(21, 14))
+    update = live_finalization_update(current, observed_at=CHECKED_AT+timedelta(seconds=30), status=final)
+    assert repository.apply_live_finalization(current, update) is WriteResult.APPLIED
+    assert repository.apply_live_rating(current, live_rating_value(), checked_at=CHECKED_AT) is WriteResult.STALE
+    completed = repository.get(current.game_id)
+    assert completed.live_rating is None
+    assert completed.status == final
+    assert repository.apply_rating(completed, make_provisional_rating()) is WriteResult.APPLIED
+
+
+def test_inflight_finalization_preserves_but_hides_live_rating(game_table):
+    repository = DynamoGameRepository(game_table)
+    current = live_game()
+    repository.create_if_absent(current)
+    assert repository.apply_live_rating(current, live_rating_value(), checked_at=CHECKED_AT) is WriteResult.APPLIED
+    final = GameStatus(GameState.FINAL, score=Score(21, 14))
+    assert repository.apply_live_finalization(current, live_finalization_update(current, observed_at=CHECKED_AT+timedelta(seconds=30), status=final)) is WriteResult.APPLIED
+    completed = repository.get(current.game_id)
+    assert completed.live_rating == live_rating_value()
+    assert repository.apply_rating(completed, make_provisional_rating()) is WriteResult.APPLIED
+    projected = ReadSnapshotService(repository, SeasonCalendar(), lambda: CHECKED_AT+timedelta(seconds=45)).week_snapshot(current.season_week)['games'][0]
+    assert projected['liveRating'] is None
+    assert projected['rating']['score'] == 6.5
