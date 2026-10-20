@@ -61,6 +61,17 @@ export interface ApiRating {
   readonly confirmationWorkRemains: boolean;
 }
 
+export interface ApiLiveRating {
+  readonly score: number;
+  readonly source: 'espn';
+  readonly modelVersion: string;
+  readonly calculatedAt: string;
+  readonly sourceUpdatedAt: string;
+  readonly expiresAt: string;
+  readonly period: number;
+  readonly clock: string;
+}
+
 export interface ApiFreshness {
   readonly scheduleCheckedAt: string | null;
   readonly scheduleUpdatedAt: string | null;
@@ -79,6 +90,7 @@ export interface ApiGame {
   readonly broadcaster: string | null;
   readonly odds: { readonly details: string | null; readonly updatedAt: string | null } | null;
   readonly rating: ApiRating;
+  readonly liveRating?: ApiLiveRating | null;
   readonly freshness: ApiFreshness;
 }
 
@@ -146,7 +158,8 @@ export interface TeamView {
 }
 
 export interface RatingPresentation {
-  state: ApiRatingState;
+  state: ApiRatingState | 'live';
+  expiresAt?: string;
   label: string;
   score: number | null;
   confirmationSupported?: boolean;

@@ -3,6 +3,7 @@ import {
   ReadApiClient,
   ReadApiError,
   decodeBootstrap,
+  decodeApiGame,
   normalizeApiBaseUrl,
   parseRetryAfter,
 } from '../../services/readApi';
@@ -113,4 +114,21 @@ describe('ReadApiClient endpoint and body ownership', () => {
     const malformed = new ReadApiClient({ baseUrl: 'http://api.test', fetcher: vi.fn().mockResolvedValue(response({ games: [] })) });
     await expect(malformed.fetchBootstrap()).rejects.toBeInstanceOf(ReadApiError);
   });
+});
+
+
+it('decodes additive live ratings and rejects malformed scores or expiry', () => {
+  const team = { id: '1', displayName: 'Team', abbreviation: 'T', logoKey: null, pregameRecord: null, postgameRecord: null };
+  const raw = {
+    id: 'g', espnId: 'g', seasonWeek: week, kickoffAt: null, home: team, away: { ...team, id: '2' },
+    status: { state: 'in_progress', detail: null, period: 2, clock: '8:00', score: { home: 0, away: 0 } }, broadcaster: null, odds: null,
+    rating: { state: 'pending', score: null, source: null, modelVersion: null, calculatedAt: null, confirmedAt: null, confirmationSupported: true, confirmationWorkRemains: true },
+    freshness: { scheduleCheckedAt: null, scheduleUpdatedAt: null, liveSourceCheckedAt: null, liveStateUpdatedAt: null },
+  };
+  const live = { score: 7.1, source: 'espn', modelVersion: 'live-espn-v1', calculatedAt: '2026-10-19T18:00:00Z', sourceUpdatedAt: '2026-10-19T17:59:30Z', expiresAt: '2026-10-19T18:09:30Z', period: 5, clock: '2:00' };
+  expect(decodeApiGame(raw).liveRating).toBeNull();
+  expect(decodeApiGame({ ...raw, liveRating: live }).liveRating?.score).toBe(7.1);
+  for (const invalid of [{ ...live, score: 11 }, { ...live, score: NaN }, { ...live, expiresAt: live.calculatedAt }, { ...live, period: 0 }]) {
+    expect(() => decodeApiGame({ ...raw, liveRating: invalid })).toThrow(ReadApiError);
+  }
 });

@@ -9,6 +9,7 @@ import os
 from typing import Callable, Protocol
 
 from ..rating.provisional import ProvisionalRatingService
+from ..rating.live import LiveRatingService
 from .models import SyncEvent, SyncMode, SyncResult
 from .service import ScheduleSyncService
 
@@ -37,6 +38,7 @@ def handle_event(
     raw_event: object,
     service: ScheduleSyncService,
     provisional_ratings: ProvisionalRatingService,
+    live_ratings: LiveRatingService | None = None,
     *,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> dict[str, object]:
@@ -51,6 +53,8 @@ def handle_event(
                 result.provisional_rating_game_ids,
                 now=now,
             )
+            if live_ratings is not None:
+                live_ratings.rate_due(result.live_rating_game_ids, now=now)
     except Exception as exc:
         mode = parsed_event.mode.value if parsed_event is not None else "invalid"
         scheduled_time = (
@@ -107,7 +111,15 @@ def lambda_handler(event: object, context: _LambdaContext) -> dict[str, object]:
         logger=LOGGER,
         remaining_time_ms=context.get_remaining_time_in_millis,
     )
-    return handle_event(event, service, provisional_ratings)
+    from ..providers.espn_live import EspnLiveSummaryClient
+
+    live_ratings = LiveRatingService(
+        repository,
+        EspnLiveSummaryClient(timeout_seconds=summary_timeout),
+        logger=LOGGER,
+        remaining_time_ms=context.get_remaining_time_in_millis,
+    )
+    return handle_event(event, service, provisional_ratings, live_ratings)
 
 
 def _result_payload(result: SyncResult) -> dict[str, object]:
@@ -119,6 +131,7 @@ def _result_payload(result: SyncResult) -> dict[str, object]:
         "gamesUpdated": result.games_updated,
         "staleWrites": result.stale_writes,
         "rejectedTransitions": result.rejected_transitions,
+        "liveRatingGameIds": [str(game_id) for game_id in result.live_rating_game_ids],
         "provisionalRatingGameIds": [
             str(game_id) for game_id in result.provisional_rating_game_ids
         ],

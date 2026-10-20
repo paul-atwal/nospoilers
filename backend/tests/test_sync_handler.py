@@ -90,3 +90,22 @@ def test_handler_does_not_add_rating_calls_to_schedule_modes() -> None:
 def test_handler_rejects_invalid_job_inputs(raw_event: object) -> None:
     with pytest.raises(DomainValidationError):
         handle_event(raw_event, Mock(), Mock(), clock=lambda: NOW)
+
+
+def test_final_rating_work_runs_before_bounded_live_work():
+    service, provisional, live = Mock(), Mock(), Mock()
+    calls = []
+    service.run.return_value = SyncResult(
+        mode=SyncMode.LIVE_TICK,
+        provisional_rating_game_ids=(GameId('final'),),
+        live_rating_game_ids=(GameId('live'),),
+    )
+    provisional.rate_due.side_effect = lambda *a, **k: calls.append('final')
+    live.rate_due.side_effect = lambda *a, **k: calls.append('live')
+    result = handle_event(
+        {'mode': 'live_tick', 'scheduledTime': NOW.isoformat(), 'season': 2026},
+        service, provisional, live, clock=lambda: NOW,
+    )
+    assert calls == ['final', 'live']
+    assert result['liveRatingGameIds'] == ['live']
+    live.rate_due.assert_called_once_with((GameId('live'),), now=NOW)

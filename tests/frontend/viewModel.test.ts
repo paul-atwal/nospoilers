@@ -113,3 +113,22 @@ describe('read API compatibility view model', () => {
     expect(result.at(-1)?.id).toBe('eligible-9');
   });
 });
+
+it('uses fresh live ratings only in live games and excludes them from season rankings', () => {
+  const now = Date.now();
+  const live = {
+    ...makeApiGame('in_progress', { home: 14, away: 14 }),
+    liveRating: {
+      score: 8.2, source: 'espn' as const, modelVersion: 'live-espn-v1',
+      calculatedAt: new Date(now - 1000).toISOString(),
+      sourceUpdatedAt: new Date(now - 2000).toISOString(),
+      expiresAt: new Date(now + 60_000).toISOString(), period: 5, clock: '4:00',
+    },
+  };
+  expect(toViewGame(live).rating).toMatchObject({ state: 'live', score: 8.2 });
+  expect(selectBestSeasonGames([live], 2026)).toEqual([]);
+  expect(toViewGame({ ...live, liveRating: { ...live.liveRating, expiresAt: new Date(now - 1).toISOString() } }).rating.score).toBeNull();
+  expect(toViewGame({ ...live, status: { ...live.status, state: 'delayed' } }).rating.score).toBeNull();
+  expect(toViewGame({ ...live, status: { ...live.status, state: 'final' } }).rating.score).toBeNull();
+  expect(toViewGame({ ...live, status: { ...live.status, state: 'final' }, rating: { ...live.rating, state: 'provisional', score: 7.4 } }).rating.score).toBe(7.4);
+});

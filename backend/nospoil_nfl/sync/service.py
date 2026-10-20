@@ -128,8 +128,9 @@ class ScheduleSyncService:
 
         counts = _Counts()
         handoffs: list[GameId] = []
+        live_handoffs: list[GameId] = []
         if event.mode is SyncMode.LIVE_TICK:
-            self._run_live(event, now, counts, handoffs)
+            self._run_live(event, now, counts, handoffs, live_handoffs)
         else:
             self._run_schedule(event, now, counts, handoffs)
 
@@ -141,6 +142,7 @@ class ScheduleSyncService:
             stale_writes=counts.stale_writes,
             rejected_transitions=counts.rejected_transitions,
             provisional_rating_game_ids=tuple(dict.fromkeys(handoffs)),
+            live_rating_game_ids=tuple(dict.fromkeys(live_handoffs)),
         )
         _emit(
             self._logger,
@@ -153,6 +155,7 @@ class ScheduleSyncService:
             stale_writes=result.stale_writes,
             rejected_transitions=result.rejected_transitions,
             provisional_rating_requests=len(result.provisional_rating_game_ids),
+            live_rating_requests=len(result.live_rating_game_ids),
         )
         return result
 
@@ -205,7 +208,9 @@ class ScheduleSyncService:
             try:
                 current_index = discovery.known_weeks.index(discovery.season_week)
             except ValueError as exc:
-                raise ValueError("active discovery current week is not catalogued") from exc
+                raise ValueError(
+                    "active discovery current week is not catalogued"
+                ) from exc
             future_weeks = set(discovery.known_weeks[current_index + 1 :])
             exclusions = _future_week_exclusions(discovery)
 
@@ -298,9 +303,29 @@ class ScheduleSyncService:
         now: datetime,
         counts: _Counts,
         handoffs: list[GameId],
+        live_handoffs: list[GameId],
     ) -> None:
         assert event.season is not None
         candidates = self._repository.list_season(event.season)
+        live_candidates = sorted(
+            (
+                game
+                for game in candidates
+                if game.status.state is GameState.IN_PROGRESS
+                and game.kickoff_at is not None
+                and now <= game.kickoff_at + MAX_STARTED_RECOVERY_WINDOW
+                and (
+                    game.live_rating_checked_at is None
+                    or now - game.live_rating_checked_at >= MINIMUM_LIVE_CHECK_INTERVAL
+                )
+            ),
+            key=lambda game: (
+                game.live_rating_checked_at is not None,
+                game.live_rating_checked_at or game.kickoff_at,
+                str(game.game_id),
+            ),
+        )
+        live_handoffs.extend(game.game_id for game in live_candidates)
         handoff_candidates = sorted(
             (game for game in candidates if _needs_rating_handoff(game, now)),
             key=_rating_handoff_priority,
@@ -347,6 +372,8 @@ class ScheduleSyncService:
                 counts,
                 handoffs,
             )
+            if observation.status.state is GameState.IN_PROGRESS:
+                live_handoffs.append(current.game_id)
 
     def _include_recovery_weeks(
         self,

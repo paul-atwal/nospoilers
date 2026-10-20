@@ -122,7 +122,24 @@ def _rating_payload(game: Game) -> dict[str, object]:
     }
 
 
-def _game_payload(game: Game) -> dict[str, object]:
+def _live_rating_payload(game: Game, now: datetime) -> dict[str, object] | None:
+    live = game.live_rating
+    if (game.status.state is not GameState.IN_PROGRESS or live is None
+            or live.calculated_at > now or live.expires_at <= now):
+        return None
+    return {
+        "score": live.score,
+        "source": "espn",
+        "modelVersion": live.model_version,
+        "calculatedAt": _timestamp(live.calculated_at),
+        "sourceUpdatedAt": _timestamp(live.source_updated_at),
+        "expiresAt": _timestamp(live.expires_at),
+        "period": live.period,
+        "clock": live.clock,
+    }
+
+
+def _game_payload(game: Game, now: datetime) -> dict[str, object]:
     odds = None
     if game.odds is not None:
         odds = {
@@ -140,6 +157,7 @@ def _game_payload(game: Game) -> dict[str, object]:
         "broadcaster": game.broadcaster,
         "odds": odds,
         "rating": _rating_payload(game),
+        "liveRating": _live_rating_payload(game, now),
         "freshness": {
             "scheduleCheckedAt": _timestamp(game.schedule_checked_at),
             "scheduleUpdatedAt": _timestamp(game.schedule_updated_at),
@@ -156,6 +174,8 @@ def _represented_timestamps(game: Game) -> Iterator[datetime]:
         yield game.live_source_checked_at
     if game.live_state_updated_at is not None:
         yield game.live_state_updated_at
+    if game.live_rating_checked_at is not None:
+        yield game.live_rating_checked_at
     if game.rating.calculated_at is not None:
         yield game.rating.calculated_at
     if game.rating.confirmed_at is not None:
@@ -300,7 +320,7 @@ class ReadSnapshotService:
             "pollAfterSeconds": self._poll_after(
                 games, now, season_week=season_week, season=season
             ),
-            "games": [_game_payload(game) for game in games],
+            "games": [_game_payload(game, now) for game in games],
         }
         # Include selection state and every game's stable class in validator
         # material without leaking transport internals into the JSON body.

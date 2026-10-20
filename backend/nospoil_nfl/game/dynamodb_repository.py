@@ -4,14 +4,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
+from datetime import datetime, timedelta
 from typing import Protocol
 
 from botocore.exceptions import BotoCoreError, ClientError
 
 from .dynamodb_codec import (
     _encode_retry,
+    _encode_live_rating,
+    _format_timestamp,
     _encode_rating,
 )
+from .live_rating import LiveRating
 from .models import (
     DomainValidationError,
     Game,
@@ -283,6 +287,97 @@ class DynamoGameRepository(DynamoReadRepository, GameRepository):
             self._update_rating_item(current, rating)
         except _StaleWrite:
             return WriteResult.STALE
+        return WriteResult.APPLIED
+
+    def apply_live_rating(
+        self, current: Game, rating: LiveRating | None, *, checked_at: datetime
+    ) -> WriteResult:
+        """Condition on status and prior live fields; finalization wins any race."""
+        if not isinstance(current, Game):
+            raise DomainValidationError("current must be a Game")
+        if (
+            not isinstance(checked_at, datetime)
+            or checked_at.utcoffset() != timedelta(0)
+        ):
+            raise DomainValidationError("live rating check must be UTC")
+        if rating is not None and not isinstance(rating, LiveRating):
+            raise DomainValidationError("rating must be a LiveRating")
+        if current.status.state is not GameState.IN_PROGRESS:
+            return WriteResult.STALE
+        if (
+            current.live_rating_checked_at is not None
+            and checked_at <= current.live_rating_checked_at
+        ):
+            return WriteResult.STALE
+        if rating is not None:
+            if rating.calculated_at > checked_at:
+                raise DomainValidationError("live calculation cannot follow its check")
+            if (
+                current.live_rating is not None
+                and rating.last_play_sequence < current.live_rating.last_play_sequence
+            ):
+                return WriteResult.STALE
+        # Failures preserve the previous snapshot, which expires independently.
+        if rating is None:
+            rating = current.live_rating
+        names = {
+            "#id": "game_id",
+            "#status": "status",
+            "#live": "live_rating",
+            "#checked": "live_rating_checked_at",
+            "#home": "home",
+            "#away": "away",
+            "#team_id": "team_id",
+        }
+        values = {
+            ":status": self._codec.encode(current)["status"],
+            ":checked": _format_timestamp(checked_at),
+        }
+        conditions = [
+            "attribute_exists(#id)",
+            "#status = :status",
+            "#home.#team_id = :home",
+            "#away.#team_id = :away",
+        ]
+        values[":home"] = current.home.team_id
+        values[":away"] = current.away.team_id
+        if current.live_rating is None:
+            conditions.append("attribute_not_exists(#live)")
+        else:
+            conditions.append("#live = :expected_live")
+            values[":expected_live"] = _encode_live_rating(current.live_rating)
+        if current.live_rating_checked_at is None:
+            conditions.append("attribute_not_exists(#checked)")
+        else:
+            conditions.append("#checked = :expected_checked")
+            values[":expected_checked"] = _format_timestamp(
+                current.live_rating_checked_at
+            )
+        expression = "SET #checked = :checked"
+        if rating is not None:
+            expression += ", #live = :live"
+            values[":live"] = _encode_live_rating(rating)
+        try:
+            self._table.update_item(
+                Key={"game_id": str(current.game_id)},
+                UpdateExpression=expression,
+                ConditionExpression=" AND ".join(conditions),
+                ExpressionAttributeNames=names,
+                ExpressionAttributeValues=values,
+            )
+        except ClientError as error:
+            if (
+                error.response.get("Error", {}).get("Code")
+                == "ConditionalCheckFailedException"
+            ):
+                return WriteResult.STALE
+            raise GameRepositoryError(
+                "could not update live rating in DynamoDB"
+            ) from error
+        except BotoCoreError as error:
+            raise GameRepositoryError(
+                "could not update live rating in DynamoDB"
+            ) from error
         return WriteResult.APPLIED
 
     def apply_nflverse_mapping(

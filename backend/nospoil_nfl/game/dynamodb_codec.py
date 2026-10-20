@@ -27,6 +27,7 @@ from .models import (
     TeamRecord,
 )
 from .errors import GameRepositoryDataError
+from .live_rating import LiveRating
 
 
 _SCHEMA_VERSION = 1
@@ -310,6 +311,38 @@ def _decode_rating(item: Mapping[str, object]) -> GameRating:
         raise GameRepositoryDataError("invalid stored game rating") from error
 
 
+def _encode_live_rating(rating: LiveRating) -> dict[str, object]:
+    return {
+        "score": Decimal(str(rating.score)),
+        "model_version": rating.model_version,
+        "input_hash": rating.input_hash,
+        "calculated_at": _format_timestamp(rating.calculated_at),
+        "source_updated_at": _format_timestamp(rating.source_updated_at),
+        "expires_at": _format_timestamp(rating.expires_at),
+        "period": rating.period,
+        "clock": rating.clock,
+        "last_play_sequence": rating.last_play_sequence,
+        "observation_count": rating.observation_count,
+    }
+
+
+def _decode_live_rating(item: Mapping[str, object] | None) -> LiveRating | None:
+    if item is None:
+        return None
+    return LiveRating(
+        score=_required_number(item, "score"),
+        model_version=_required_text(item, "model_version"),
+        input_hash=_required_text(item, "input_hash"),
+        calculated_at=_parse_timestamp(item.get("calculated_at"), "live calculated_at"),
+        source_updated_at=_parse_timestamp(item.get("source_updated_at"), "live source_updated_at"),
+        expires_at=_parse_timestamp(item.get("expires_at"), "live expires_at"),
+        period=_required_int(item, "period"),
+        clock=_required_text(item, "clock"),
+        last_play_sequence=_required_int(item, "last_play_sequence"),
+        observation_count=_required_int(item, "observation_count"),
+    )
+
+
 class _DynamoGameCodec:
     """Translate domain games to the private DynamoDB item shape."""
 
@@ -338,6 +371,10 @@ class _DynamoGameCodec:
             "schedule_checked_at": _format_timestamp(game.schedule_checked_at),
             "schedule_updated_at": _format_timestamp(game.schedule_updated_at),
         }
+        if game.live_rating is not None:
+            item["live_rating"] = _encode_live_rating(game.live_rating)
+        if game.live_rating_checked_at is not None:
+            item["live_rating_checked_at"] = _format_timestamp(game.live_rating_checked_at)
         if game.nflverse_id is not None:
             item["nflverse_id"] = game.nflverse_id
         if game.kickoff_at is not None:
@@ -388,6 +425,11 @@ class _DynamoGameCodec:
                     _parse_timestamp(item.get("kickoff_at"), "kickoff_at")
                     if "kickoff_at" in item
                     else None
+                ),
+                live_rating=_decode_live_rating(_optional_map(item, "live_rating")),
+                live_rating_checked_at=(
+                    _parse_timestamp(item.get("live_rating_checked_at"), "live_rating_checked_at")
+                    if "live_rating_checked_at" in item else None
                 ),
                 home=_decode_team(_required_map(item, "home")),
                 away=_decode_team(_required_map(item, "away")),

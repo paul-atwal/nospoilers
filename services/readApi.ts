@@ -188,6 +188,31 @@ function decodeRating(value: unknown, field: string): ApiRating {
   };
 }
 
+function decodeLiveRating(value: unknown, field: string): ApiGame['liveRating'] {
+  // Old API deployments and fixtures may omit this additive field.
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value)) throw new ReadApiError(`Invalid read API field: ${field}`);
+  const score = nullableNumber(value.score, `${field}.score`);
+  const period = nullableNumber(value.period, `${field}.period`);
+  if (score === null || score < 0 || score > 10 || period === null || !Number.isInteger(period) || period < 1 || value.source !== 'espn') {
+    throw new ReadApiError(`Invalid read API field: ${field}`);
+  }
+  const timestamp = (name: string): string => {
+    const text = requiredString(value[name], `${field}.${name}`);
+    if (!Number.isFinite(Date.parse(text))) throw new ReadApiError(`Invalid read API field: ${field}.${name}`);
+    return text;
+  };
+  const calculatedAt = timestamp('calculatedAt');
+  const expiresAt = timestamp('expiresAt');
+  if (Date.parse(expiresAt) <= Date.parse(calculatedAt)) throw new ReadApiError(`Invalid read API field: ${field}.expiresAt`);
+  return {
+    score, period, source: 'espn',
+    modelVersion: requiredString(value.modelVersion, `${field}.modelVersion`),
+    calculatedAt, expiresAt, sourceUpdatedAt: timestamp('sourceUpdatedAt'),
+    clock: requiredString(value.clock, `${field}.clock`),
+  };
+}
+
 function decodeFreshness(value: unknown, field: string): ApiFreshness {
   if (!isRecord(value)) throw new ReadApiError(`Invalid read API field: ${field}`);
   return {
@@ -220,6 +245,7 @@ export function decodeApiGame(value: unknown, field = 'games[]'): ApiGame {
     broadcaster: nullableString(value.broadcaster, `${field}.broadcaster`),
     odds,
     rating: decodeRating(value.rating, `${field}.rating`),
+    liveRating: decodeLiveRating(value.liveRating, `${field}.liveRating`),
     freshness: decodeFreshness(value.freshness, `${field}.freshness`),
   };
 }

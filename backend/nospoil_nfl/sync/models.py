@@ -99,6 +99,7 @@ class SyncResult:
     stale_writes: int = 0
     rejected_transitions: int = 0
     provisional_rating_game_ids: tuple[GameId, ...] = ()
+    live_rating_game_ids: tuple[GameId, ...] = ()
 
 
 def _parse_timestamp(value: object) -> datetime:
