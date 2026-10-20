@@ -341,3 +341,19 @@ def test_api_projection_expires_with_a_new_etag_and_keeps_completed_rating_pendi
             ]
             is None
         )
+
+
+def test_write_budget_reserves_enough_time_for_dynamodb_retries():
+    g = game()
+    repository, provider = Mock(), Mock()
+    repository.get.return_value = g
+    provider.fetch_live_summary.return_value = summary(g)
+    # Entry, revalidation and fetch pass the guard; HTTP then consumes enough
+    # time that a potentially retried DynamoDB write must wait for another tick.
+    remaining = iter([20_000, 20_000, 20_000, 17_000])
+    service = LiveRatingService(
+        repository, provider, remaining_time_ms=lambda: next(remaining)
+    )
+    service.rate_due([g.game_id], now=NOW)
+    provider.fetch_live_summary.assert_called_once_with(g.game_id)
+    repository.apply_live_rating.assert_not_called()
