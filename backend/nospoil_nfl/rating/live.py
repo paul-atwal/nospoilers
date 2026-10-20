@@ -78,7 +78,7 @@ class LiveRatingService:
                 # deterministic order and never share mutable game objects.
                 results = list(executor.map(self._fetch, due))
             for game, summary in zip(due, results):
-                if self._remaining_time_ms() < 8_000:
+                if self._remaining_time_ms() < MIN_REMAINING_TIME_MS:
                     self._emit("live_rating_budget_skip")
                     return
                 rating = (

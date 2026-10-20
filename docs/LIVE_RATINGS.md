@@ -81,8 +81,8 @@ Each normal live tick runs completed provisional work first, then attempts at
 most eight live summaries in batches of four. Oldest attempts (including
 failures) go first; never-attempted games precede them. A game is attempted no
 more often than every 45 seconds, within the existing 12-hour started-game
-recovery window. The Lambda requires 18 seconds remaining before a fetch batch
-and eight seconds before a persistence write. The existing five-second ESPN
+recovery window. The Lambda requires 18 seconds remaining
+before both a fetch batch and a persistence write. The existing five-second ESPN
 summary timeout applies. With 13 simultaneous games, normal healthy ticks
 cover all games in roughly two minutes. Source lag and time-budget deferrals
 can increase that interval; it is not a latency guarantee.
