@@ -65,6 +65,16 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
   const score = game.isDelayed ? null : game.isLive
     ? liveFresh ? rating.score : null
     : rating.state === 'live' ? null : rating.score;
+  const hasLiveRating = game.isLive && score !== null;
+  const liveIndicator = (
+    <span className="flex shrink-0 items-center gap-1 text-[9px] leading-3 font-bold tracking-wider text-red-400">
+      <span className="relative flex h-1.5 w-1.5">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
+      </span>
+      LIVE
+    </span>
+  );
   const isScheduled = game.isScheduled ?? game.isUpcoming;
   const colorClasses = score === null
     ? 'text-neutral-500 border-white/10 bg-white/5'
@@ -190,11 +200,12 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
             <TeamRow side="home" team={home} teamScore={game.homeScore} />
           </div>
         </div>
-        <div className="flex flex-col items-center justify-between min-w-[68px] border-l border-white/5 pl-3 md:pl-4 py-1">
-          <div className="flex-1 w-full flex items-center justify-center relative">
+        <div className={`flex flex-col items-center min-w-[68px] border-l border-white/5 pl-3 md:pl-4 ${hasLiveRating ? 'justify-center gap-2' : 'justify-between py-1'}`}>
+          {hasLiveRating && liveIndicator}
+          <div className={`${hasLiveRating ? 'shrink-0' : 'flex-1'} w-full flex items-center justify-center relative`}>
             <div
               aria-label={isScheduled ? `Spread ${oddsLabel}` : game.isLive ? `Live game${score === null ? '' : `, rating ${score.toFixed(1)}`}` : `Rating ${score ?? 'pending'}`}
-              className={`relative h-12 md:h-14 rounded-full flex items-center justify-center border-[3px] ${game.isLive && score !== null ? 'w-[86px] md:w-[94px] flex-row gap-1.5' : 'w-12 md:w-14 flex-col'} ${
+              className={`relative w-12 h-12 md:w-14 md:h-14 rounded-full flex flex-col items-center justify-center border-[3px] ${
                 isScheduled
                   ? 'text-neutral-400 border-neutral-700 bg-neutral-800/50'
                   : colorClasses
@@ -209,17 +220,8 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
                 </>
               ) : (
                 <>
-                  {game.isLive && score !== null && (
-                    <span className="font-black text-lg leading-none">{score.toFixed(1)}</span>
-                  )}
                   {game.isLive ? (
-                    <span className="flex items-center gap-1 text-[9px] font-bold tracking-wider text-red-400">
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
-                      </span>
-                      LIVE
-                    </span>
+                    !hasLiveRating && liveIndicator
                   ) : game.isDelayed ? (
                     <span className="text-[10px] font-bold text-center">--</span>
                   ) : ratingMessage && (
@@ -228,7 +230,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
                     </span>
                   )}
                   {isUnratedPreseason && <span className="text-[10px] font-bold text-center">--</span>}
-                  {!game.isLive && score !== null && (
+                  {score !== null && (
                     <span className="font-black text-lg leading-none">{score.toFixed(1)}</span>
                   )}
                 </>
@@ -242,7 +244,7 @@ const GameCard: React.FC<GameCardProps> = ({ game, showWeekContext = false }) =>
                 setRevealedGameId(game.id);
                 setIsRevealed((value) => !value);
               }}
-              className={`mt-1 p-2 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 ${
+              className={`${hasLiveRating ? '-my-2' : 'mt-1'} p-2 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 ${
                 revealActive
                   ? 'text-neutral-600 hover:bg-neutral-800'
                   : 'text-blue-400 hover:bg-blue-500/10 hover:text-blue-300'
