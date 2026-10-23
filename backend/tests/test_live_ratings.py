@@ -357,3 +357,38 @@ def test_write_budget_reserves_enough_time_for_dynamodb_retries():
     service.rate_due([g.game_id], now=NOW)
     provider.fetch_live_summary.assert_called_once_with(g.game_id)
     repository.apply_live_rating.assert_not_called()
+
+
+def test_overlapping_drives_ignore_display_metadata_and_keep_each_wp_once():
+    from copy import deepcopy
+
+    p = payload()
+    expected = parse_live_observations(p)
+    repeated = deepcopy(p["drives"]["previous"][0]["plays"][-5:])
+    repeated[-1]["scoreValue"] = 0
+    repeated[-1]["text"] = "Updated provider display text"
+    repeated[-1]["period"]["displayValue"] = "Overtime"
+    repeated[-1]["clock"]["value"] = 123
+    p["drives"]["current"] = {"plays": repeated}
+    assert parse_live_observations(p) == expected
+    assert calculate_live_rating(parse_live_observations(p)) == calculate_live_rating(
+        expected
+    )
+
+
+@pytest.mark.parametrize("field", ["sequenceNumber", "period", "clock", "wallclock"])
+def test_overlapping_drives_still_reject_conflicting_rating_inputs(field):
+    from copy import deepcopy
+
+    p = payload()
+    repeated = deepcopy(p["drives"]["previous"][0]["plays"][-1])
+    replacements = {
+        "sequenceNumber": "999999",
+        "period": {"number": 6},
+        "clock": {"displayValue": "0:01"},
+        "wallclock": "2026-10-19T18:00:01Z",
+    }
+    repeated[field] = replacements[field]
+    p["drives"]["current"] = {"plays": [repeated]}
+    with pytest.raises(ProviderDataError, match="conflicting duplicate play"):
+        parse_live_observations(p)
