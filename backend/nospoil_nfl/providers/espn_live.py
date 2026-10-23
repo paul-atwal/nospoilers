@@ -5,6 +5,7 @@ The final-summary contract remains strict. No scoreboard clock is used here.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import math
@@ -145,12 +146,29 @@ class EspnLiveSummaryClient(EspnGameSummaryClient):
         )
 
 
+def _rating_play_fields(play: Mapping[str, object]) -> tuple[object, ...]:
+    """Compare only the inputs consumed by the WP timing join.
+
+    ESPN can repeat a play across previous/current drives with different display
+    metadata (for example scoreValue). That does not change its rating inputs.
+    """
+    period = play.get("period")
+    clock = play.get("clock")
+    return (
+        play.get("sequenceNumber"),
+        period.get("number") if isinstance(period, Mapping) else period,
+        clock.get("displayValue") if isinstance(clock, Mapping) else clock,
+        play.get("wallclock"),
+    )
+
+
 def parse_live_observations(payload: object) -> tuple[LiveObservation, ...]:
     """Pure parser shared by the source replay and the production live client.
 
     ESPN's pregame baseline has no play clock and is excluded. Unjoined trailing
     WP is excluded until its play arrives; an interior gap rejects the snapshot.
-    Clock corrections may add time, but cannot reorder the source play sequence.
+    Repeated plays may differ in unused display metadata, but their timing
+    inputs must agree. Clock corrections cannot reorder the source sequence.
     """
     root = _mapping(payload, "summary response")
     drives = _mapping(root.get("drives"), "drives")
@@ -171,7 +189,9 @@ def parse_live_observations(payload: object) -> tuple[LiveObservation, ...]:
             play_id = _source_id(play.get("id"))
             if play_id is None:
                 raise _data_error("play ID is required")
-            if play_id in plays and plays[play_id] != play:
+            if play_id in plays and _rating_play_fields(
+                plays[play_id]
+            ) != _rating_play_fields(play):
                 raise _data_error("conflicting duplicate play")
             plays[play_id] = play
     wp = root.get("winprobability")
