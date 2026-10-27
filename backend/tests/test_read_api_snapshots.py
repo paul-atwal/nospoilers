@@ -37,6 +37,26 @@ from backend.nospoil_nfl.game.read_repository import GameRepositoryError
 NOW = datetime(2026, 9, 10, 18, 0, tzinfo=UTC)
 
 
+def test_confirmation_polling_wakes_at_publication_and_changes_etag():
+    waiting = game(
+        "waiting",
+        status=GameStatus(GameState.FINAL, score=Score(7, 3)),
+        rating=GameRating(
+            RatingState.PROVISIONAL, RatingRetry(), score=5.0,
+            source=RatingSource.ESPN, model_version="rating-v1", input_hash="input",
+            calculated_at=NOW - timedelta(days=1),
+        ),
+    )
+    repository = FakeRepository([waiting])
+    before = service(repository, NOW.replace(hour=9, minute=2)).week_snapshot(waiting.season_week)
+    during = service(repository, NOW.replace(hour=9, minute=3)).week_snapshot(waiting.season_week)
+    after = service(repository, NOW.replace(hour=11, minute=3)).week_snapshot(waiting.season_week)
+    assert before["pollAfterSeconds"] == 60
+    assert during["pollAfterSeconds"] == 300
+    assert after["pollAfterSeconds"] == 3600
+    assert len({before.etag, during.etag, after.etag}) == 3
+
+
 def game(
     game_id: str,
     *,

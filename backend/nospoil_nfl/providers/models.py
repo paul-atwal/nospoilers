@@ -232,8 +232,11 @@ class NflversePlay:
     period: int | None
     home_win_probability: float | None
     score: Score | None
+    game_complete: bool = False
 
     def __post_init__(self) -> None:
+        if not isinstance(self.game_complete, bool):
+            raise DomainValidationError("game_complete must be a boolean")
         _require_text("nflverse_game_id", self.nflverse_game_id)
         if (
             isinstance(self.play_number, bool)

@@ -18,6 +18,7 @@ from ..game.models import (
 )
 from ..game.read_repository import GameReadRepository
 from ..rating.confirmation import confirmation_work_remains, is_confirmation_supported
+from ..rating.publication import confirmation_poll_seconds
 from .calendar import SeasonCalendar
 
 
@@ -216,7 +217,7 @@ def _poll_class(game: Game, now: datetime) -> int | None:
     if game.rating.state.value == "pending":
         return 60
     if game.rating.state.value in {"provisional", "unavailable"}:
-        return 3600 if is_confirmation_supported(game.season_week) else None
+        return confirmation_poll_seconds(now) if is_confirmation_supported(game.season_week) else None
     return None
 
 

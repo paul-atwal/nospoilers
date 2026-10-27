@@ -230,25 +230,54 @@ log retention, and alarms; this change does not create them.
 
 ## Scheduled nflverse reconciliation
 
-`.github/workflows/reconcile-ratings.yml` runs every six hours at minute 37 UTC.
-The offset is intentional: GitHub notes that scheduled workflows can be delayed
-or dropped during periods of high load near the top of an hour. The workflow
-also supports manual `due`, `correction`, and `verify` runs. Use `correction`
+`.github/workflows/reconcile-ratings.yml` wakes every 15 minutes, away from the
+top of the hour. GitHub can delay scheduled runs, so this is not a freshness
+SLA. A lightweight, read-only preflight skips heavy dependencies and the worker
+when there is no useful work. The workflow also supports manual `due`,
+`correction`, and `verify` runs. Use `correction`
 for all confirmed final games, or pass one final ESPN game ID for a targeted
 repair. Use `verify` before a season starts to load and validate nflverse
 schedule and play data without reading or writing DynamoDB.
 
-Normal reconciliation selects due unconfirmed final games from the existing
-`season-schedule-index` query before downloading a season. Initial eligibility
-is six hours after the provisional calculation, or six hours after the durable
-final observation when no provisional calculation exists. A later source
-failure is retried after 6 hours, 12 hours, then 24 hours (capped at 24 hours).
-A due item more than 18 hours beyond its initial eligibility raises a workflow
-failure and a GitHub error annotation. Later retry times do not reset that
-overdue clock. Routine not-ready retries are successful unless they are
-overdue.
-Confirmed ratings are never downgraded; correction runs preserve a confirmed
-rating when source validation fails.
+Automatic `due` work uses `rating/automatic.py`. Supported final games are
+eligible immediately, independently of ESPN provisional calculation success.
+The worker checks the exact season PBP asset with conditional HEAD before
+loading it. All selected games share one season snapshot. An unchanged revision
+is not downloaded again for games already evaluated against it; new finals,
+changed final scores, failed writes, and relevant schedule repairs remain
+eligible. Full PBP must contain an END GAME marker and pass the existing
+mapping, season/week, score and WP checks before automatic confirmation.
+
+`rating/publication.py` centralizes UTC publication hints. Source checks run at
+most every 15 minutes during a two-hour publication window, otherwise every six
+hours while work waits. Quiet retries wake at the next expected window. With
+no confirmations or correction sweep due, there are no nflverse requests.
+Transport failures use a shared source cooldown and honor Retry-After. Missing
+validators allow a bounded six-hour payload fallback. A new PBP revision
+bypasses per-game not-ready retries. Direct legacy CLI retries retain their
+6/12/24-hour backoff; the workflow uses the automatic coordinator instead.
+
+One bounded correction pass covers games from the seven days before the latest
+Thursday 09:03 UTC publication hint. It waits for an asset modified at or after
+that hint, tolerates delayed publication, and stops after each game succeeds.
+Old seasons outside that recent window are not repeatedly corrected. Existing
+input hashes suppress unchanged writes; source failure never downgrades a
+confirmed rating. An unconfirmed game older than 24 hours from its original
+eligibility raises a workflow error; future retry times do not reset that age.
+
+Per-season source cursors, evaluated input fingerprints, correction progress,
+and expiring worker leases live in `NFLVERSE_SOURCE#<season>` control items in
+the environment's games table. They have no `season_key`/`schedule_key`, so the
+sparse game index and strict game decoder never see them. Existing Query,
+GetItem and UpdateItem permissions suffice; there is no new AWS service. A
+25-minute lease outlives the workflow's 20-minute timeout and recovers after a
+crash. An old worker cannot overwrite a new lease owner.
+
+Completed screens awaiting confirmation poll the read API every five minutes
+during publication windows and otherwise hourly, waking at the next window.
+This adds no upstream nflverse calls; focusing the app still refreshes
+immediately. Once all games are confirmed, polling stops and later corrections
+appear on focus or manual refresh.
 
 The staging environment uses these repository or environment variables:
 

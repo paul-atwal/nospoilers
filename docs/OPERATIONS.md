@@ -106,10 +106,20 @@ revision with `NOSPOIL_SCHEDULE_STATE=DISABLED`; do not delete or manually
 rewrite the retained production table.
 
 Use the existing `reconcile-ratings.yml` workflow in `correction` mode for one
-game or a named season, and `due` mode for routine work. A due game is overdue
-more than 18 hours after its initial eligibility (six hours after provisional
-calculation, or six hours after the durable final observation when no
-provisional calculation exists). Later retry times do not reset that clock. Do
+game or a named season, and `due` mode for routine work. Supported finals are
+eligible immediately; a due game is overdue more than 24 hours after its
+provisional calculation, or durable final observation if no provisional rating
+exists. Later retry times do not reset that clock. The automatic workflow wakes
+every 15 minutes but gates actual source checks: 15-minute intervals in expected
+publication windows and six-hour fallbacks outside them, with no upstream calls
+when no work remains. Conditional HEAD checks avoid repeated PBP downloads.
+`nflverse_probe_skipped`, `nflverse_source_unchanged`, `nflverse_batch_processed`,
+and `nflverse_source_failure` identify the gate and batch outcomes; the JSON
+summary counts logical season downloads and metadata probes separately.
+The weekly recent-game correction pass waits for Thursday's modeled-data
+publication and retains per-game progress. Control items named
+`NFLVERSE_SOURCE#<season>` hold cursors and expiring leases outside the games
+GSI; do not clear these or run a production correction as routine diagnosis. Do
 not clear a valid confirmed rating when the source is unavailable. GitHub can
 disable scheduled workflows in a public repository after 60 days without
 repository activity; if that happens, re-enable `reconcile-ratings.yml` and run

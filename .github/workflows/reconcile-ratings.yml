@@ -2,8 +2,9 @@ name: Reconcile nflverse ratings
 
 on:
   schedule:
-    # Every six hours, away from the top of the hour to reduce scheduler delay risk.
-    - cron: "37 0,6,12,18 * * *"
+    # The worker gates source checks: 15m publication windows, 6h quiet fallback,
+    # and no nflverse calls when neither confirmation nor correction is due.
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -83,8 +84,8 @@ jobs:
             backend/requirements-sync.txt
             backend/requirements-reconcile.txt
 
-      - name: Install backend dependencies
-        run: python -m pip install -r backend/requirements-reconcile.txt
+      - name: Install lightweight preflight dependencies
+        run: python -m pip install -r backend/requirements-sync.txt
 
       - name: Validate reconciliation configuration
         shell: bash
@@ -117,10 +118,31 @@ jobs:
           aws-region: ${{ vars.NOSPOIL_AWS_REGION }}
           role-session-name: nospoil-nflverse-reconciliation
 
-      - name: Run reconciliation
+      - name: Check for useful reconciliation work
+        id: preflight
+        if: env.MODE == 'due'
         shell: bash
         run: |
           set -euo pipefail
+          args=(--preflight)
+          if [[ -n "$SEASON" ]]; then args+=(--season "$SEASON"); fi
+          python -m backend.nospoil_nfl.rating.automatic "${args[@]}"
+
+      - name: Install reconciliation dependencies
+        if: env.MODE != 'due' || steps.preflight.outputs.needed == 'true'
+        run: python -m pip install -r backend/requirements-reconcile.txt
+
+      - name: Run reconciliation
+        if: env.MODE != 'due' || steps.preflight.outputs.needed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$MODE" == due ]]; then
+            args=()
+            if [[ -n "$SEASON" ]]; then args+=(--season "$SEASON"); fi
+            python -m backend.nospoil_nfl.rating.automatic "${args[@]}"
+            exit
+          fi
           args=(--mode "$MODE")
           if [[ -n "$SEASON" ]]; then args+=(--season "$SEASON"); fi
           if [[ -n "$GAME_ID" ]]; then args+=(--game-id "$GAME_ID"); fi

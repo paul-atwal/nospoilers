@@ -236,6 +236,7 @@ def _result_payload(
 def _combine_results(results: Sequence[ReconciliationResult]) -> ReconciliationResult:
     return ReconciliationResult(
         downloads=sum(result.downloads for result in results),
+        probes=sum(result.probes for result in results),
         selected=sum(result.selected for result in results),
         mappings=sum(result.mappings for result in results),
         confirmed_updates=sum(result.confirmed_updates for result in results),
@@ -283,6 +284,8 @@ def _publish(payload: dict[str, object], *, attention: str | None = None) -> Non
         f"- Status: `{('ok' if payload.get('ok') else 'attention')}`",
     ]
     for key in (
+        "probes",
+        "downloads",
         "selected",
         "confirmed_updates",
         "unchanged",
