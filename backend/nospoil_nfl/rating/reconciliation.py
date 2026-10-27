@@ -28,9 +28,9 @@ from .confirmation import confirmation_support, confirmation_work_remains
 from .input import RatingInput, hash_rating_input
 
 
-CONFIRMATION_DELAY = timedelta(hours=6)
+CONFIRMATION_DELAY = timedelta(0)
 RETRY_DELAYS = (timedelta(hours=6), timedelta(hours=12), timedelta(hours=24))
-OVERDUE_AFTER = timedelta(hours=18)
+OVERDUE_AFTER = timedelta(hours=24)
 MODEL_VERSION = "rating-v1"
 ReconciliationMode = Literal["due", "correction"]
 
@@ -40,6 +40,7 @@ class ReconciliationResult:
     """Bounded counters and attention signals from one reconciliation run."""
 
     downloads: int = 0
+    probes: int = 0
     selected: int = 0
     mappings: int = 0
     confirmed_updates: int = 0
@@ -117,6 +118,10 @@ class NflverseReconciliationService:
         mode: ReconciliationMode = "due",
         game_id: GameId | None = None,
         game_ids: tuple[GameId, ...] | None = None,
+        games: list[Game] | None = None,
+        source: NflverseSeason | None = None,
+        ignore_retry: bool = False,
+        require_complete: bool = False,
     ) -> ReconciliationResult:
         """Run due reconciliation or an explicit correction for one season."""
         _require_utc(now)
@@ -126,7 +131,7 @@ class NflverseReconciliationService:
             raise ValueError("mode must be due or correction")
         target_game_ids = _target_game_ids(game_id, game_ids)
 
-        games = self._repository.list_season(season)
+        games = self._repository.list_season(season) if games is None else games
         state = _RunState()
         if mode == "due":
             state.overdue = sum(
@@ -134,21 +139,21 @@ class NflverseReconciliationService:
                 for game in games
                 if confirmation_work_remains(game)
             )
-        selected = self._select_games(games, now, mode, target_game_ids, state)
+        selected = self._select_games(games, now, mode, target_game_ids, state, ignore_retry)
         state.selected = len(selected)
         if not selected:
             return state.result()
 
-        state.downloads = 1
+        state.downloads = int(source is None)
         self._emit(
             "info",
-            "nflverse_download_started",
+            "nflverse_download_started" if source is None else "nflverse_snapshot_reused",
             mode=mode,
             season=season,
             selected=len(selected),
         )
         try:
-            source = self._season_loader(
+            source = source or self._season_loader(
                 season,
                 schedule_provider=self._schedule_provider,
                 play_provider=self._play_provider,
@@ -170,7 +175,7 @@ class NflverseReconciliationService:
             for candidate in selected:
                 current = self._repository.get(candidate.game_id)
                 if current is None or not self._still_relevant(
-                    current, now, mode, target_game_ids
+                    current, now, mode, target_game_ids, ignore_retry
                 ):
                     self._emit(
                         "info",
@@ -185,11 +190,12 @@ class NflverseReconciliationService:
                     )
             return state.result()
 
-        self._emit("info", "nflverse_download_succeeded", season=season)
+        if state.downloads:
+            self._emit("info", "nflverse_download_succeeded", season=season)
         for candidate in selected:
             current = self._repository.get(candidate.game_id)
             if current is None or not self._still_relevant(
-                current, now, mode, target_game_ids
+                current, now, mode, target_game_ids, ignore_retry
             ):
                 self._emit(
                     "info",
@@ -198,7 +204,7 @@ class NflverseReconciliationService:
                     reason="changed_after_selection",
                 )
                 continue
-            self._reconcile_one(current, source, now, mode, state)
+            self._reconcile_one(current, source, now, mode, state, require_complete)
         return state.result()
 
     def run_due(self, season: int, *, now: datetime) -> ReconciliationResult:
@@ -229,6 +235,7 @@ class NflverseReconciliationService:
         mode: ReconciliationMode,
         target_game_ids: frozenset[GameId] | None,
         state: _RunState,
+        ignore_retry: bool = False,
     ) -> list[Game]:
         if mode == "correction":
             if target_game_ids is not None:
@@ -288,7 +295,7 @@ class NflverseReconciliationService:
             if game.rating.state is RatingState.CONFIRMED:
                 continue
             due_at = _confirmation_due_at(game)
-            if due_at <= now:
+            if ignore_retry or due_at <= now:
                 selected.append(game)
         selected.sort(key=lambda game: (_confirmation_due_at(game), str(game.game_id)))
         return selected
@@ -299,6 +306,7 @@ class NflverseReconciliationService:
         now: datetime,
         mode: ReconciliationMode,
         target_game_ids: frozenset[GameId] | None,
+        ignore_retry: bool = False,
     ) -> bool:
         if current.status.state is not GameState.FINAL:
             return False
@@ -308,7 +316,7 @@ class NflverseReconciliationService:
             if target_game_ids is not None:
                 return current.game_id in target_game_ids
             return current.rating.state is RatingState.CONFIRMED
-        return current.rating.state is not RatingState.CONFIRMED and _confirmation_due_at(current) <= now
+        return current.rating.state is not RatingState.CONFIRMED and (ignore_retry or _confirmation_due_at(current) <= now)
 
     def _reconcile_one(
         self,
@@ -317,6 +325,7 @@ class NflverseReconciliationService:
         now: datetime,
         mode: ReconciliationMode,
         state: _RunState,
+        require_complete: bool = False,
     ) -> None:
         try:
             mapped = source.find_game(GameId(current.espn_id))
@@ -352,6 +361,8 @@ class NflverseReconciliationService:
             # play IDs are not chronological for every game: correction rows
             # can be inserted later with a larger ID than END GAME.
             plays = mapped.plays
+            if require_complete and not any(play.game_complete for play in plays):
+                raise _ValidationFailure("nflverse_plays_incomplete")
             wp_history = tuple(
                 play.home_win_probability
                 for play in plays

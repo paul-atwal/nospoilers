@@ -163,6 +163,7 @@ def _normalize_row(row: Mapping[str, Any], requested_season: int) -> NflversePla
             period=period,
             home_win_probability=home_win_probability,
             score=score,
+            game_complete=isinstance(row.get("desc"), str) and row["desc"].strip() == "END GAME",
         )
     except DomainValidationError as exc:
         raise _data_error(f"play row {game_id}/{play_number} was invalid") from exc

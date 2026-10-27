@@ -236,7 +236,7 @@ def service(
 
 
 def test_no_due_games_do_not_download() -> None:
-    game = make_game("one", final_at=NOW - timedelta(hours=1))
+    game = make_game("one", rating=confirmed_rating())
     repository = FakeRepository((game,))
     schedule, plays = source_for((game,))
 
@@ -246,6 +246,14 @@ def test_no_due_games_do_not_download() -> None:
     assert result.downloads == 0
     assert schedule.calls == []
     assert plays.calls == []
+
+
+def test_new_final_is_eligible_without_waiting_for_provisional_rating() -> None:
+    game = make_game("one", final_at=NOW - timedelta(seconds=1))
+    repository = FakeRepository((game,))
+    schedule, plays = source_for((game,))
+    result = service(repository, schedule, plays).run_due(2026, now=NOW)
+    assert result.confirmed_updates == 1
 
 
 def test_due_games_load_one_season_and_confirm_using_source_ordered_plays() -> None:
